@@ -5,11 +5,17 @@ using OpenTK.Windowing.GraphicsLibraryFramework;
 
 namespace Krajinka;
 
+/// <summary>
+/// Vstupní bod aplikace, který vytvoří a spustí herní okno.
+/// </summary>
 class Program
 {
+    /// <summary>
+    /// Inicializuje nastavení okna a spustí hlavní smyčku aplikace.
+    /// </summary>
+    /// <param name="args">Argumenty příkazové řádky.</param>
     static void Main(string[] args)
     {
-        // Nastavení vlastností samotného okna
         var nativeWindowSettings = new NativeWindowSettings()
         {
             ClientSize = new Vector2i(800, 600),
@@ -18,7 +24,6 @@ class Program
             Profile = ContextProfile.Core
         };
 
-        // Vytvoření a spuštění okna
         using (var window = new Window(GameWindowSettings.Default, nativeWindowSettings))
         {
             window.Run();

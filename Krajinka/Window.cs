@@ -1,58 +1,89 @@
-﻿using OpenTK.Graphics.OpenGL; // OpenTK používá namespace OpenGL4 i pro verze 3.3
+﻿using OpenTK.Graphics.OpenGL;
+using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 
 namespace Krajinka;
 
+/// <summary>
+/// Herní okno aplikace zajišťující inicializaci, vykreslování a zpracování vstupu.
+/// </summary>
 public class Window : GameWindow
 {
+    private Terrain terrain;
+    private double fps = 0;
+
+    /// <summary>
+    /// Inicializuje nové okno aplikace s daným nastavením herní smyčky a nativního okna.
+    /// </summary>
+    /// <param name="gameWindowSettings">Nastavení herní smyčky (např. frekvence aktualizace).</param>
+    /// <param name="nativeWindowSettings">Nastavení nativního okna (např. velikost, název, režim zobrazení).</param>
     public Window(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
         : base(gameWindowSettings, nativeWindowSettings)
     {
     }
 
-    // Volá se pouze jednou při startu aplikace. Ideální pro načítání dat a nastavování paměti.
+    /// <summary>
+    /// Provede inicializaci OpenGL stavu a vytvoří instanci terénu při načtení okna.
+    /// </summary>
     protected override void OnLoad()
     {
         base.OnLoad();
 
-        // Nastavíme barvu pozadí, kterou se okno vyčistí (třeba nebesky modrá)
-        GL.ClearColor(0.2f, 0.4f, 0.8f, 1.0f);
+        GL.ClearColor(0.1f, 0.2f, 0.3f, 1.0f);
+        GL.Enable(EnableCap.DepthTest);
+        GL.PointSize(5);
+
+        terrain = new Terrain(50, 50);
     }
 
-    // Volá se každý snímek. Slouží k samotnému kreslení grafiky.
+    /// <summary>
+    /// Vykreslí jeden snímek scény, nastaví kamerové matice a aktualizuje zobrazené FPS v titulku okna.
+    /// </summary>
+    /// <param name="e">Argumenty snímku obsahující čas od posledního vykreslení.</param>
     protected override void OnRenderFrame(FrameEventArgs e)
     {
         base.OnRenderFrame(e);
 
-        // Vymaže obrazovku nastavenou barvou z OnLoad
-        GL.Clear(ClearBufferMask.ColorBufferBit);
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-        // ZDE BUDEME KRESLIT TERÉN
+        // Matice kamery
+        Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.DegreesToRadians(45f), (float)Size.X / Size.Y, 0.1f, 100f);
+        Matrix4 view = Matrix4.LookAt(new Vector3(12, 10, 30), new Vector3(12, 0, 12), Vector3.UnitY);
+        Matrix4 model = Matrix4.Identity;
 
-        // Prohodí buffery a zobrazí to, co jsme právě nakreslili
+        terrain.Render(model, view, projection);
         SwapBuffers();
+
+        if (e.Time > 0)
+        {
+            fps = 0.95 * fps + 0.05 * (1 / e.Time);
+            Title = $"Semestrální práce - Krajinka | FPS: {fps:0}";
+        }
     }
 
-    // Volá se každý snímek. Slouží pro logiku, fyziku a vstupy (klávesnice/myš).
+    /// <summary>
+    /// Aktualizuje stav aplikace pro aktuální snímek a zpracuje vstup z klávesnice.
+    /// </summary>
+    /// <param name="e">Argumenty snímku obsahující čas od poslední aktualizace.</param>
     protected override void OnUpdateFrame(FrameEventArgs e)
     {
         base.OnUpdateFrame(e);
 
-        // Pokud uživatel zmáčkne Escape, zavřeme okno
         if (KeyboardState.IsKeyDown(Keys.Escape))
         {
             Close();
         }
     }
 
-    // Volá se pokaždé, když uživatel změní velikost okna.
+    /// <summary>
+    /// Reaguje na změnu velikosti okna a upraví OpenGL viewport na nové rozměry.
+    /// </summary>
+    /// <param name="e">Argumenty změny velikosti okna.</param>
     protected override void OnResize(ResizeEventArgs e)
     {
         base.OnResize(e);
-
-        // Řekneme OpenGL, ať přizpůsobí vykreslovací plochu (Viewport) nové velikosti okna
         GL.Viewport(0, 0, Size.X, Size.Y);
     }
 }
