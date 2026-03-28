@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
@@ -24,6 +25,7 @@ public class Window : GameWindow
 
     private Vector2 lastMousePos;
     private bool firstMove = true;
+    private bool isBorderlessFullscreen = false;
 
     private Vector3 moveForward;
     private Vector3 moveRight;
@@ -45,11 +47,11 @@ public class Window : GameWindow
     {
         base.OnLoad();
 
-        GL.ClearColor(0.1f, 0.2f, 0.3f, 1.0f);
+        GL.ClearColor(0.529f, 0.808f, 0.922f, 1.0f);
         GL.Enable(EnableCap.DepthTest);
         GL.PointSize(5);
 
-        terrain = new Terrain(100, 100);
+        terrain = new Terrain(Path.Combine("Data", "terrain_test_rgba.png"));
 
         float startX = 25.0f;
         float startZ = 25.0f;
@@ -77,6 +79,25 @@ public class Window : GameWindow
         if (moveRight.LengthSquared > 0)
         {
             moveRight = Vector3.Normalize(moveRight);
+        }
+    }
+
+    /// <summary>
+    /// Přepne okno mezi borderless fullscreen režimem a normálním režimem.
+    /// </summary>
+    private void ToggleFullscreen()
+    {
+        if (!isBorderlessFullscreen)
+        {
+            WindowBorder = WindowBorder.Hidden;
+            WindowState = OpenTK.Windowing.Common.WindowState.Maximized;
+            isBorderlessFullscreen = true;
+        }
+        else
+        {
+            WindowState = OpenTK.Windowing.Common.WindowState.Normal;
+            WindowBorder = WindowBorder.Resizable;
+            isBorderlessFullscreen = false;
         }
     }
 
@@ -133,6 +154,12 @@ public class Window : GameWindow
         }
 
         KeyboardState keyboard = KeyboardState;
+
+        if (keyboard.IsKeyPressed(Keys.F11))
+        {
+            ToggleFullscreen();
+        }
+
         if (keyboard.IsKeyDown(Keys.Escape))
         {
             Close();
