@@ -15,9 +15,11 @@ public class Window : GameWindow
 {
     private const float EyeHeight = 1.8f;
     private const float MouseDeltaEpsilon = 0.0001f;
+    private const float TerrainSampleSpacing = 0.5f;
 
     private Terrain terrain;
     private Camera camera;
+    private readonly List<MeshObject> trees = new();
     private double fps = 0;
 
     private readonly Queue<double> frameTimes = new();
@@ -53,6 +55,8 @@ public class Window : GameWindow
 
         terrain = new Terrain(Path.Combine("Data", "terrain_test_rgba.png"));
 
+        CreateObjectsFromGreenChannel();
+
         float startX = 25.0f;
         float startZ = 25.0f;
         float startY = terrain.GetHeightAt(startX, startZ) + EyeHeight;
@@ -60,8 +64,39 @@ public class Window : GameWindow
 
         RecalculateMovementDirections();
 
-        // Skryje a uzamkne kurzor pro FPS ovládání
         CursorState = CursorState.Grabbed;
+    }
+
+    /// <summary>
+    /// Vytvoří objekty ve scéně podle kanálu G mapy (1 = strom).
+    /// </summary>
+    private void CreateObjectsFromGreenChannel()
+    {
+        int mapWidth = terrain.ObjectCodes.GetLength(0);
+        int mapDepth = terrain.ObjectCodes.GetLength(1);
+
+        for (int z = 0; z < mapDepth; z++)
+        {
+            for (int x = 0; x < mapWidth; x++)
+            {
+                byte objectCode = terrain.ObjectCodes[x, z];
+
+                if (objectCode == 1)
+                {
+                    float worldX = x * TerrainSampleSpacing;
+                    float worldY = terrain.Heights[x, z];
+                    float worldZ = z * TerrainSampleSpacing;
+
+                    MeshObject tree = new MeshObject(
+                        Path.Combine("Data", "Lowpoly_tree_sample.obj"),
+                        new Vector3(0.18f, 0.70f, 0.18f),
+                        new Vector3(worldX, worldY, worldZ));
+
+                    tree.Scale = new Vector3(0.35f, 0.35f, 0.35f);
+                    trees.Add(tree);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -121,9 +156,14 @@ public class Window : GameWindow
         Matrix4 model = Matrix4.Identity;
 
         terrain.Render(model, view, projection);
+
+        for (int i = 0; i < trees.Count; i++)
+        {
+            trees[i].Render(view, projection);
+        }
+
         SwapBuffers();
 
-        // Udržujeme časy snímků jen za poslední 1 sekundu
         frameTimes.Enqueue(e.Time);
         frameTimeSum += e.Time;
 

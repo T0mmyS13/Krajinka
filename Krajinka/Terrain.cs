@@ -7,7 +7,7 @@ using SkiaSharp;
 /// <summary>
 /// Reprezentuje jednoduchý terén vykreslovaný pomocí OpenGL shaderů.
 /// </summary>
-public class Terrain
+public class Terrain : Krajinka.SceneObject
 {
     private const float SampleSpacing = 0.5f;
     private const float HeightScale = 0.05f;
@@ -17,11 +17,6 @@ public class Terrain
     private readonly float[] vertices;
     private readonly int width;
     private readonly int depth;
-
-    private int VBO;
-    private int VAO;
-    private int shaderProgram;
-    private int vertexCount;
 
     /// <summary>
     /// Výšky načtené z kanálu R.
@@ -68,6 +63,7 @@ public class Terrain
     /// </summary>
     /// <param name="heightMapRelativePath">Relativní cesta k mapě vůči output složce.</param>
     public Terrain(string heightMapRelativePath)
+        : base(Vector3.Zero)
     {
         LoadMapFromPng(
             heightMapRelativePath,
@@ -89,12 +85,16 @@ public class Terrain
 
         SetBounds();
 
-        vertexCount = (width - 1) * (depth - 1) * 6;
-        vertices = new float[vertexCount * 9];
+        int terrainVertexCount = (width - 1) * (depth - 1) * 6;
+        vertices = new float[terrainVertexCount * 9];
 
         BuildMeshVertices();
-        SetupShaders();
-        SetupBuffers();
+
+        InitializeShaderProgram(
+            Path.Combine("Shaders", "terrain.vert"),
+            Path.Combine("Shaders", "terrain.frag"));
+
+        InitializeMesh(vertices);
     }
 
     /// <summary>
@@ -356,64 +356,6 @@ public class Terrain
     }
 
     /// <summary>
-    /// Načte text shaderu ze souboru ve výstupní složce aplikace.
-    /// </summary>
-    /// <param name="relativePath">Relativní cesta k shader souboru.</param>
-    /// <returns>Textový obsah shaderu.</returns>
-    private static string LoadShaderSource(string relativePath)
-    {
-        string fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
-        return File.ReadAllText(fullPath);
-    }
-
-    /// <summary>
-    /// Zkompiluje shadery a vytvoří OpenGL shader program.
-    /// </summary>
-    private void SetupShaders()
-    {
-        string vertexShaderSource = LoadShaderSource(Path.Combine("Shaders", "terrain.vert"));
-        string fragmentShaderSource = LoadShaderSource(Path.Combine("Shaders", "terrain.frag"));
-
-        int vertexShader = GL.CreateShader(ShaderType.VertexShader);
-        GL.ShaderSource(vertexShader, vertexShaderSource);
-        GL.CompileShader(vertexShader);
-
-        int fragmentShader = GL.CreateShader(ShaderType.FragmentShader);
-        GL.ShaderSource(fragmentShader, fragmentShaderSource);
-        GL.CompileShader(fragmentShader);
-
-        shaderProgram = GL.CreateProgram();
-        GL.AttachShader(shaderProgram, vertexShader);
-        GL.AttachShader(shaderProgram, fragmentShader);
-        GL.LinkProgram(shaderProgram);
-
-        GL.DeleteShader(vertexShader);
-        GL.DeleteShader(fragmentShader);
-    }
-
-    /// <summary>
-    /// Vytvoří a nastaví OpenGL buffery a atributy vrcholů pro pozici, barvu a normálu.
-    /// </summary>
-    private void SetupBuffers()
-    {
-        VAO = GL.GenVertexArray();
-        GL.BindVertexArray(VAO);
-
-        VBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, VBO);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StaticDraw);
-
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 9 * sizeof(float), 0);
-        GL.EnableVertexAttribArray(0);
-
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 9 * sizeof(float), 3 * sizeof(float));
-        GL.EnableVertexAttribArray(1);
-
-        GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, 9 * sizeof(float), 6 * sizeof(float));
-        GL.EnableVertexAttribArray(2);
-    }
-
-    /// <summary>
     /// Vykreslí terén pomocí předaných transformačních matic.
     /// </summary>
     /// <param name="model">Modelová matice objektu.</param>
@@ -421,19 +363,7 @@ public class Terrain
     /// <param name="projection">Projekční matice kamery.</param>
     public void Render(Matrix4 model, Matrix4 view, Matrix4 projection)
     {
-        GL.UseProgram(shaderProgram);
-        GL.BindVertexArray(VAO);
-
-        int modelLocation = GL.GetUniformLocation(shaderProgram, "model");
-        int viewLocation = GL.GetUniformLocation(shaderProgram, "view");
-        int projLocation = GL.GetUniformLocation(shaderProgram, "projection");
-        int lightDirLocation = GL.GetUniformLocation(shaderProgram, "lightDir");
-
-        GL.UniformMatrix4(modelLocation, true, ref model);
-        GL.UniformMatrix4(viewLocation, true, ref view);
-        GL.UniformMatrix4(projLocation, true, ref projection);
-        GL.Uniform3(lightDirLocation, new Vector3(0.5f, -1.0f, 0.3f));
-
-        GL.DrawArrays(PrimitiveType.Triangles, 0, vertexCount);
+        BeginRender(model, view, projection);
+        DrawMeshTriangles();
     }
 }
