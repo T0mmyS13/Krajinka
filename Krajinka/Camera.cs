@@ -8,12 +8,34 @@ namespace Krajinka;
 /// </summary>
 public class Camera
 {
+    /// <summary>
+    /// Aktuální pozice kamery ve světě.
+    /// </summary>
     public Vector3 Position;
+
+    /// <summary>
+    /// Směr, kterým kamera aktuálně míří.
+    /// </summary>
     public Vector3 Front;
+
+    /// <summary>
+    /// Vektor směrem nahoru použitý pro orientaci kamery.
+    /// </summary>
     public Vector3 Up;
+
+    /// <summary>
+    /// Pravý směrový vektor kamery odvozený z orientace.
+    /// </summary>
     public Vector3 Right;
 
+    /// <summary>
+    /// Horizontální úhel natočení kamery ve stupních.
+    /// </summary>
     public float Yaw;
+
+    /// <summary>
+    /// Vertikální úhel natočení kamery ve stupních.
+    /// </summary>
     public float Pitch;
 
     /// <summary>

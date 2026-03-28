@@ -1,4 +1,5 @@
-﻿using OpenTK.Graphics.OpenGL;
+﻿using System.Collections.Generic;
+using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -11,12 +12,21 @@ namespace Krajinka;
 /// </summary>
 public class Window : GameWindow
 {
+    private const float EyeHeight = 1.8f;
+    private const float MouseDeltaEpsilon = 0.0001f;
+
     private Terrain terrain;
     private Camera camera;
     private double fps = 0;
 
+    private readonly Queue<double> frameTimes = new();
+    private double frameTimeSum = 0;
+
     private Vector2 lastMousePos;
     private bool firstMove = true;
+
+    private Vector3 moveForward;
+    private Vector3 moveRight;
 
     /// <summary>
     /// Vytvoří nové herní okno s daným nastavením.
@@ -40,10 +50,34 @@ public class Window : GameWindow
         GL.PointSize(5);
 
         terrain = new Terrain(100, 100);
-        camera = new Camera(new Vector3(25.0f, 10.0f, 25.0f));
+
+        float startX = 25.0f;
+        float startZ = 25.0f;
+        float startY = terrain.GetHeightAt(startX, startZ) + EyeHeight;
+        camera = new Camera(new Vector3(startX, startY, startZ));
+
+        RecalculateMovementDirections();
 
         // Skryje a uzamkne kurzor pro FPS ovládání
         CursorState = CursorState.Grabbed;
+    }
+
+    /// <summary>
+    /// Přepočítá pomocné směry pohybu v rovině XZ podle aktuální orientace kamery.
+    /// </summary>
+    private void RecalculateMovementDirections()
+    {
+        moveForward = new Vector3(camera.Front.X, 0f, camera.Front.Z);
+        if (moveForward.LengthSquared > 0)
+        {
+            moveForward = Vector3.Normalize(moveForward);
+        }
+
+        moveRight = new Vector3(camera.Right.X, 0f, camera.Right.Z);
+        if (moveRight.LengthSquared > 0)
+        {
+            moveRight = Vector3.Normalize(moveRight);
+        }
     }
 
     /// <summary>
@@ -68,9 +102,19 @@ public class Window : GameWindow
         terrain.Render(model, view, projection);
         SwapBuffers();
 
-        if (e.Time > 0)
+        // Udržujeme časy snímků jen za poslední 1 sekundu
+        frameTimes.Enqueue(e.Time);
+        frameTimeSum += e.Time;
+
+        while (frameTimeSum > 1.0 && frameTimes.Count > 0)
         {
-            fps = 0.95 * fps + 0.05 * (1 / e.Time);
+            double oldestFrameTime = frameTimes.Dequeue();
+            frameTimeSum -= oldestFrameTime;
+        }
+
+        if (frameTimeSum > 0)
+        {
+            fps = frameTimes.Count / frameTimeSum;
             Title = $"Semestrální práce - Krajinka | FPS: {fps:0}";
         }
     }
@@ -88,21 +132,49 @@ public class Window : GameWindow
             return;
         }
 
-        var keyboard = KeyboardState;
+        KeyboardState keyboard = KeyboardState;
         if (keyboard.IsKeyDown(Keys.Escape))
         {
             Close();
         }
 
-        // Pohyb kamery klávesami WASD
         float speed = 6.0f * (float)e.Time;
+        Vector3 moveDirection = Vector3.Zero;
 
-        if (keyboard.IsKeyDown(Keys.W)) camera.Position += camera.Front * speed;
-        if (keyboard.IsKeyDown(Keys.S)) camera.Position -= camera.Front * speed;
-        if (keyboard.IsKeyDown(Keys.A)) camera.Position -= camera.Right * speed;
-        if (keyboard.IsKeyDown(Keys.D)) camera.Position += camera.Right * speed;
+        if (keyboard.IsKeyDown(Keys.W))
+        {
+            moveDirection += moveForward;
+        }
 
-        var mouse = MouseState;
+        if (keyboard.IsKeyDown(Keys.S))
+        {
+            moveDirection -= moveForward;
+        }
+
+        if (keyboard.IsKeyDown(Keys.A))
+        {
+            moveDirection -= moveRight;
+        }
+
+        if (keyboard.IsKeyDown(Keys.D))
+        {
+            moveDirection += moveRight;
+        }
+
+        // Normalizace zajistí stejnou rychlost i při diagonále
+        if (moveDirection.LengthSquared > 0)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+            camera.Position += moveDirection * speed;
+        }
+
+        float clampedX = MathHelper.Clamp(camera.Position.X, terrain.MinX, terrain.MaxX);
+        float clampedZ = MathHelper.Clamp(camera.Position.Z, terrain.MinZ, terrain.MaxZ);
+        float terrainHeight = terrain.GetHeightAt(clampedX, clampedZ);
+
+        camera.Position = new Vector3(clampedX, terrainHeight + EyeHeight, clampedZ);
+
+        MouseState mouse = MouseState;
 
         if (firstMove)
         {
@@ -116,9 +188,14 @@ public class Window : GameWindow
 
             lastMousePos = new Vector2(mouse.X, mouse.Y);
 
-            camera.Yaw += deltaX * 0.2f;
-            camera.Pitch -= deltaY * 0.2f;
-            camera.UpdateVectors();
+            bool hasMouseMovement = MathF.Abs(deltaX) > MouseDeltaEpsilon || MathF.Abs(deltaY) > MouseDeltaEpsilon;
+            if (hasMouseMovement)
+            {
+                camera.Yaw += deltaX * 0.2f;
+                camera.Pitch -= deltaY * 0.2f;
+                camera.UpdateVectors();
+                RecalculateMovementDirections();
+            }
         }
     }
 
