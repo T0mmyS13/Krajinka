@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -9,67 +9,69 @@ using OpenTK.Windowing.GraphicsLibraryFramework;
 namespace Krajinka;
 
 /// <summary>
-/// Hlavní okno aplikace. Zajišťuje inicializaci OpenGL, vykreslování scény a ovládání kamery.
+/// Hlavní okno aplikace s vykreslovací a aktualizační smyčkou.
 /// </summary>
 public class Window : GameWindow
 {
     private const float EyeHeight = 1.8f;
     private const float MouseDeltaEpsilon = 0.0001f;
     private const float TerrainSampleSpacing = 0.5f;
+    private const int MouseFSResetFrames = 3;
 
-    private Terrain terrain;
+    private readonly List<SceneObject> Objects = new();
+    private readonly Random random = new Random();
+
+    private Shader shader;
+    private Viewport viewport;
     private Camera camera;
-    private readonly List<MeshObject> trees = new();
-    private double fps = 0;
+    private Terrain terrain;
+    private Light lightSun;
 
     private readonly Queue<double> frameTimes = new();
-    private double frameTimeSum = 0;
+    private double frameTimeSum;
 
     private Vector2 lastMousePos;
     private bool firstMove = true;
-    private bool isBorderlessFullscreen = false;
+    private bool isBorderlessFullscreen;
+    private int mouseResetFrames;
 
-    private Vector3 moveForward;
-    private Vector3 moveRight;
-
-    /// <summary>
-    /// Vytvoří nové herní okno s daným nastavením.
-    /// </summary>
-    /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
-    /// <param name="nativeWindowSettings">Nastavení nativního okna.</param>
     public Window(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
         : base(gameWindowSettings, nativeWindowSettings)
     {
     }
 
-    /// <summary>
-    /// Inicializuje OpenGL stav, terén a kameru po načtení okna.
-    /// </summary>
     protected override void OnLoad()
     {
         base.OnLoad();
 
-        GL.ClearColor(0.529f, 0.808f, 0.922f, 1.0f);
-        GL.Enable(EnableCap.DepthTest);
-        GL.PointSize(5);
 
-        terrain = new Terrain(Path.Combine("Data", "terrain_test_rgba.png"));
+        viewport = new Viewport();
+        viewport.ClientSize = Size;
+
+        shader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "basic.frag"));
+
+        terrain = new Terrain(Path.Combine("Data", "maps", "test.png"));
+        Objects.Add(terrain);
 
         CreateObjectsFromGreenChannel();
 
         float startX = 25.0f;
         float startZ = 25.0f;
         float startY = terrain.GetHeightAt(startX, startZ) + EyeHeight;
-        camera = new Camera(new Vector3(startX, startY, startZ));
 
-        RecalculateMovementDirections();
+        camera = new Camera(new Vector3(startX, startY, startZ));
+        camera.EyeHeight = EyeHeight;
+        camera.MinX = terrain.MinX;
+        camera.MaxX = terrain.MaxX;
+        camera.MinZ = terrain.MinZ;
+        camera.MaxZ = terrain.MaxZ;
+        camera.Terrain = terrain;
+
+        lightSun = Light.CreatePoint(new Vector3(200.0f, 350.0f, 150.0f), Vector3.One, 1.0f);
 
         CursorState = CursorState.Grabbed;
     }
 
-    /// <summary>
-    /// Vytvoří objekty ve scéně podle kanálu G mapy (1 = strom).
-    /// </summary>
     private void CreateObjectsFromGreenChannel()
     {
         int mapWidth = terrain.ObjectCodes.GetLength(0);
@@ -80,88 +82,87 @@ public class Window : GameWindow
             for (int x = 0; x < mapWidth; x++)
             {
                 byte objectCode = terrain.ObjectCodes[x, z];
+                if (objectCode != 1 && objectCode != 2)
+                {
+                    continue;
+                }
+
+                float worldX = x * TerrainSampleSpacing;
+                float worldY = terrain.Heights[x, z];
+                float worldZ = z * TerrainSampleSpacing;
 
                 if (objectCode == 1)
                 {
-                    float worldX = x * TerrainSampleSpacing;
-                    float worldY = terrain.Heights[x, z];
-                    float worldZ = z * TerrainSampleSpacing;
-
-                    MeshObject tree = new MeshObject(
-                        Path.Combine("Data", "Lowpoly_tree_sample.obj"),
-                        new Vector3(0.18f, 0.70f, 0.18f),
+                    Model tree = new Model(
+                        Path.Combine("Data","models", "tree.obj"),
+                        new Vector3(0.12f, 0.62f, 0.14f),
                         new Vector3(worldX, worldY, worldZ));
 
-                    tree.Scale = new Vector3(0.35f, 0.35f, 0.35f);
-                    trees.Add(tree);
+                    float treeScale = GetRandomScale(0.28f, 0.42f);
+                    tree.SetScale(new Vector3(treeScale, treeScale, treeScale));
+                    tree.SetRotation(new Vector3(0.0f, GetRandomRotationY(), 0.0f));
+                    Objects.Add(tree);
+                }
+                else
+                {
+                    Model rock = new Model(
+                        Path.Combine("Data","models", "rock.obj"),
+                        new Vector3(0.50f, 0.50f, 0.50f),
+                        new Vector3(worldX, worldY, worldZ));
+
+                    float rockScale = GetRandomScale(0.50f, 0.80f);
+                    rock.SetScale(new Vector3(rockScale, rockScale, rockScale));
+                    rock.SetRotation(new Vector3(0.0f, GetRandomRotationY(), 0.0f));
+                    Objects.Add(rock);
                 }
             }
         }
     }
 
-    /// <summary>
-    /// Přepočítá pomocné směry pohybu v rovině XZ podle aktuální orientace kamery.
-    /// </summary>
-    private void RecalculateMovementDirections()
+    private float GetRandomScale(float minScale, float maxScale)
     {
-        moveForward = new Vector3(camera.Front.X, 0f, camera.Front.Z);
-        if (moveForward.LengthSquared > 0)
-        {
-            moveForward = Vector3.Normalize(moveForward);
-        }
+        float value = (float)random.NextDouble();
+        return minScale + (value * (maxScale - minScale));
+    }
 
-        moveRight = new Vector3(camera.Right.X, 0f, camera.Right.Z);
-        if (moveRight.LengthSquared > 0)
+    private float GetRandomRotationY()
+    {
+        float degrees = (float)(random.NextDouble() * 360.0);
+        return MathHelper.DegreesToRadians(degrees);
+    }
+
+    private void DrawScene(Viewport viewportState, Camera cameraState)
+    {
+        (Vector2i position, Vector2i size) = viewportState.GetPixelViewport();
+
+        GL.Enable(EnableCap.ScissorTest);
+        GL.Scissor(position.X, position.Y, size.X, size.Y);
+
+        GL.Viewport(position.X, position.Y, size.X, size.Y);
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        GL.Enable(EnableCap.DepthTest);
+
+        shader.Use();
+        shader.SetUniform("projection", cameraState.GetProjectionMatrix(viewportState.GetAspectRatio()));
+        shader.SetUniform("view", cameraState.GetViewMatrix());
+        shader.SetUniform("lightPosWorld", lightSun.Position);
+        shader.SetUniform("lightColor", lightSun.Color);
+        shader.SetUniform("lightIntensity", lightSun.Intensity);
+        shader.SetUniform("cameraposWorld", cameraState.GetPosition());
+
+        foreach (var sceneObject in Objects)
         {
-            moveRight = Vector3.Normalize(moveRight);
+            shader.SetUniform("model", sceneObject.GetModelMatrix());
+            sceneObject.Draw();
         }
     }
 
-    /// <summary>
-    /// Přepne okno mezi borderless fullscreen režimem a normálním režimem.
-    /// </summary>
-    private void ToggleFullscreen()
-    {
-        if (!isBorderlessFullscreen)
-        {
-            WindowBorder = WindowBorder.Hidden;
-            WindowState = OpenTK.Windowing.Common.WindowState.Maximized;
-            isBorderlessFullscreen = true;
-        }
-        else
-        {
-            WindowState = OpenTK.Windowing.Common.WindowState.Normal;
-            WindowBorder = WindowBorder.Resizable;
-            isBorderlessFullscreen = false;
-        }
-    }
-
-    /// <summary>
-    /// Vykreslí jeden snímek scény a aktualizuje FPS v titulku okna.
-    /// </summary>
-    /// <param name="e">Časové informace o snímku.</param>
     protected override void OnRenderFrame(FrameEventArgs e)
     {
         base.OnRenderFrame(e);
 
-        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
-        Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(
-            MathHelper.DegreesToRadians(45f),
-            (float)Size.X / Size.Y,
-            0.1f,
-            100f);
-
-        Matrix4 view = camera.GetViewMatrix();
-        Matrix4 model = Matrix4.Identity;
-
-        terrain.Render(model, view, projection);
-
-        for (int i = 0; i < trees.Count; i++)
-        {
-            trees[i].Render(view, projection);
-        }
-
+        GL.ClearColor(0.529f, 0.808f, 0.922f, 1.0f);
+        DrawScene(viewport, camera);
         SwapBuffers();
 
         frameTimes.Enqueue(e.Time);
@@ -175,15 +176,11 @@ public class Window : GameWindow
 
         if (frameTimeSum > 0)
         {
-            fps = frameTimes.Count / frameTimeSum;
+            double fps = frameTimes.Count / frameTimeSum;
             Title = $"Semestrální práce - Krajinka | FPS: {fps:0}";
         }
     }
 
-    /// <summary>
-    /// Zpracuje vstup z klávesnice a myši a aktualizuje pohyb kamery.
-    /// </summary>
-    /// <param name="e">Časové informace o aktualizačním kroku.</param>
     protected override void OnUpdateFrame(FrameEventArgs e)
     {
         base.OnUpdateFrame(e);
@@ -205,7 +202,23 @@ public class Window : GameWindow
             Close();
         }
 
-        float speed = 6.0f * (float)e.Time;
+        if (keyboard.IsKeyPressed(Keys.Space))
+        {
+            camera.RequestJump();
+        }
+
+        Vector3 moveForward = new Vector3(camera.Front.X, 0f, camera.Front.Z);
+        if (moveForward.LengthSquared > 0)
+        {
+            moveForward = Vector3.Normalize(moveForward);
+        }
+
+        Vector3 moveRight = new Vector3(camera.Right.X, 0f, camera.Right.Z);
+        if (moveRight.LengthSquared > 0)
+        {
+            moveRight = Vector3.Normalize(moveRight);
+        }
+
         Vector3 moveDirection = Vector3.Zero;
 
         if (keyboard.IsKeyDown(Keys.W))
@@ -228,25 +241,23 @@ public class Window : GameWindow
             moveDirection += moveRight;
         }
 
-        // Normalizace zajistí stejnou rychlost i při diagonále
         if (moveDirection.LengthSquared > 0)
         {
             moveDirection = Vector3.Normalize(moveDirection);
-            camera.Position += moveDirection * speed;
         }
 
-        float clampedX = MathHelper.Clamp(camera.Position.X, terrain.MinX, terrain.MaxX);
-        float clampedZ = MathHelper.Clamp(camera.Position.Z, terrain.MinZ, terrain.MaxZ);
-        float terrainHeight = terrain.GetHeightAt(clampedX, clampedZ);
-
-        camera.Position = new Vector3(clampedX, terrainHeight + EyeHeight, clampedZ);
+        camera.MoveDirection = moveDirection;
 
         MouseState mouse = MouseState;
-
-        if (firstMove)
+        if (firstMove || mouseResetFrames > 0)
         {
             lastMousePos = new Vector2(mouse.X, mouse.Y);
             firstMove = false;
+
+            if (mouseResetFrames > 0)
+            {
+                mouseResetFrames--;
+            }
         }
         else
         {
@@ -261,18 +272,50 @@ public class Window : GameWindow
                 camera.Yaw += deltaX * 0.2f;
                 camera.Pitch -= deltaY * 0.2f;
                 camera.UpdateVectors();
-                RecalculateMovementDirections();
             }
+        }
+
+        float dt = (float)e.Time;
+        camera.Update(dt);
+
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            Objects[i].Update(dt);
         }
     }
 
-    /// <summary>
-    /// Upraví OpenGL viewport při změně velikosti okna.
-    /// </summary>
-    /// <param name="e">Informace o nové velikosti okna.</param>
     protected override void OnResize(ResizeEventArgs e)
     {
         base.OnResize(e);
-        GL.Viewport(0, 0, Size.X, Size.Y);
+        viewport.ClientSize = Size;
+
+        (Vector2i position, Vector2i size) = viewport.GetPixelViewport();
+        GL.Viewport(position.X, position.Y, size.X, size.Y);
+    }
+
+    protected override void OnUnload()
+    {
+        base.OnUnload();
+
+        shader.Dispose();
+        
+        foreach (var obj in Objects) obj.Dispose();
+    }
+
+    private void ToggleFullscreen()
+    {
+        if (WindowState == WindowState.Normal)
+        {
+            WindowBorder = WindowBorder.Hidden;
+            WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            WindowState = WindowState.Normal;
+            WindowBorder = WindowBorder.Resizable;
+        }
+
+        firstMove = true;
+        mouseResetFrames = MouseFSResetFrames;
     }
 }

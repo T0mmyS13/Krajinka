@@ -90,14 +90,14 @@ Myš:
 
 ## 8) Povinná část – akceptační checklist
 Práce musí splnit:
-- [ ] vykreslení terénu z výškové mapy
-- [ ] pohyb pozorovatele po terénu (včetně interpolace výšky)
-- [ ] korektní kolize s terénem
-- [ ] omezení pohybu na hranice mapy
-- [ ] shaderový rendering
-- [ ] pohyb/animace závislé na reálném čase
-- [ ] FPS čítač (klouzavý)
-- [ ] stabilní chod aplikace
+- [x] vykreslení terénu z výškové mapy
+- [x] pohyb pozorovatele po terénu (včetně interpolace výšky)
+- [x] korektní kolize s terénem
+- [x] omezení pohybu na hranice mapy
+- [x] shaderový rendering
+- [x] pohyb/animace závislé na reálném čase
+- [x] FPS čítač (klouzavý)
+- [x] stabilní chod aplikace
 
 ---
 

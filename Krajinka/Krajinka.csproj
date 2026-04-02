@@ -15,8 +15,7 @@
   <ItemGroup>
     <None Include="Shaders\*.vert" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Shaders\*.frag" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Data\*.png" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Data\*.obj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Data\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

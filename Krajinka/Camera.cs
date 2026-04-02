@@ -4,47 +4,104 @@ using OpenTK.Mathematics;
 namespace Krajinka;
 
 /// <summary>
-/// Jednoduchá FPS kamera s pozicí, natočením a výpočtem pohledové matice.
+/// FPS kamera s orientací yaw/pitch a pohybem.
 /// </summary>
-public class Camera
+internal class Camera : SceneObject
 {
-    /// <summary>
-    /// Aktuální pozice kamery ve světě.
-    /// </summary>
-    public Vector3 Position;
+    private const float GroundSnapEpsilon = 0.08f;
 
     /// <summary>
-    /// Směr, kterým kamera aktuálně míří.
+    /// Směr, kterým kamera míří.
     /// </summary>
     public Vector3 Front;
 
     /// <summary>
-    /// Vektor směrem nahoru použitý pro orientaci kamery.
+    /// Směr nahoru kamery.
     /// </summary>
     public Vector3 Up;
 
     /// <summary>
-    /// Pravý směrový vektor kamery odvozený z orientace.
+    /// Pravý směrový vektor kamery.
     /// </summary>
     public Vector3 Right;
 
     /// <summary>
-    /// Horizontální úhel natočení kamery ve stupních.
+    /// Horizontální úhel natočení ve stupních.
     /// </summary>
     public float Yaw;
 
     /// <summary>
-    /// Vertikální úhel natočení kamery ve stupních.
+    /// Vertikální úhel natočení ve stupních.
     /// </summary>
     public float Pitch;
 
     /// <summary>
-    /// Vytvoří kameru na zadané pozici a nastaví výchozí směr pohledu.
+    /// Rychlost pohybu kamery.
     /// </summary>
-    /// <param name="startPosition">Počáteční pozice kamery ve světě.</param>
+    public float MovementSpeed = 6.0f;
+
+    /// <summary>
+    /// Výška očí nad terénem.
+    /// </summary>
+    public float EyeHeight = 1.8f;
+
+    /// <summary>
+    /// Požadovaný směr pohybu v rovině XZ.
+    /// </summary>
+    public Vector3 MoveDirection;
+
+    /// <summary>
+    /// Omezení pohybu na ose X.
+    /// </summary>
+    public float MinX;
+
+    /// <summary>
+    /// Omezení pohybu na ose X.
+    /// </summary>
+    public float MaxX;
+
+    /// <summary>
+    /// Omezení pohybu na ose Z.
+    /// </summary>
+    public float MinZ;
+
+    /// <summary>
+    /// Omezení pohybu na ose Z.
+    /// </summary>
+    public float MaxZ;
+
+    /// <summary>
+    /// Terén použitý pro výpočet výšky kamery.
+    /// </summary>
+    public Terrain? Terrain;
+
+    public Vector3 Velocity;
+
+    /// <summary>
+    /// Počáteční rychlost výskoku.
+    /// </summary>
+    public float JumpSpeed = 6.0f;
+
+    /// <summary>
+    /// Gravitační zrychlení.
+    /// </summary>
+    public float Gravity = 18.0f;
+
+    /// <summary>
+    /// Indikuje, zda je kamera na zemi.
+    /// </summary>
+    public bool IsGrounded = true;
+
+    private float verticalVelocity;
+    private bool jumpRequested;
+
+    /// <summary>
+    /// Vytvoří kameru na zadané pozici.
+    /// </summary>
+    /// <param name="startPosition">Počáteční pozice kamery.</param>
     public Camera(Vector3 startPosition)
     {
-        Position = startPosition;
+        SetPosition(startPosition);
         Yaw = -90.0f;
         Pitch = 0.0f;
         Up = new Vector3(0.0f, 1.0f, 0.0f);
@@ -53,22 +110,104 @@ public class Camera
     }
 
     /// <summary>
-    /// Vrátí pohledovou matici kamery pro vykreslování scény.
+    /// Vrátí perspektivní projekční matici.
     /// </summary>
-    /// <returns>Pohledová matice vytvořená z pozice a směru kamery.</returns>
-    public Matrix4 GetViewMatrix()
+    /// <param name="aspectRatio">Poměr stran viewportu.</param>
+    /// <returns>Projekční matice kamery.</returns>
+    public virtual Matrix4 GetProjectionMatrix(float aspectRatio)
     {
-        return Matrix4.LookAt(Position, Position + Front, Up);
+        return Matrix4.CreatePerspectiveFieldOfView(MathHelper.DegreesToRadians(45.0f), aspectRatio, 0.1f, 1000.0f);
+    }
+
+    public override void Update(float dt)
+    {
+        base.Update(dt);
+
+        Vector3 position = GetPosition();
+        Vector3 horizontalVelocity = Vector3.Zero;
+
+        if (MoveDirection.LengthSquared > 0.0f)
+        {
+            Vector3 normalizedDirection = Vector3.Normalize(MoveDirection);
+            horizontalVelocity = normalizedDirection * MovementSpeed;
+            position += new Vector3(horizontalVelocity.X, 0.0f, horizontalVelocity.Z) * dt;
+        }
+
+        float clampedX = MathHelper.Clamp(position.X, MinX, MaxX);
+        float clampedZ = MathHelper.Clamp(position.Z, MinZ, MaxZ);
+
+        float groundY = position.Y;
+        if (Terrain != null)
+        {
+            groundY = Terrain.GetHeightAt(clampedX, clampedZ) + EyeHeight;
+        }
+
+        bool nearGround = position.Y <= groundY + GroundSnapEpsilon;
+        if (jumpRequested && nearGround)
+        {
+            verticalVelocity = JumpSpeed;
+            IsGrounded = false;
+        }
+
+        jumpRequested = false;
+
+        verticalVelocity -= Gravity * dt;
+        float nextY = position.Y + verticalVelocity * dt;
+
+        bool isFalling = verticalVelocity <= 0.0f;
+        if (isFalling && nextY <= groundY + GroundSnapEpsilon)
+        {
+            nextY = groundY;
+
+            if (verticalVelocity < 0.0f)
+            {
+                verticalVelocity = 0.0f;
+            }
+
+            IsGrounded = true;
+        }
+        else
+        {
+            IsGrounded = false;
+        }
+
+        position = new Vector3(clampedX, nextY, clampedZ);
+        SetPosition(position);
+        Velocity = new Vector3(horizontalVelocity.X, verticalVelocity, horizontalVelocity.Z);
     }
 
     /// <summary>
-    /// Přepočítá směrové vektory kamery podle aktuálních úhlů yaw a pitch.
+    /// Vyžádá výskok kamery.
+    /// </summary>
+    public void RequestJump()
+    {
+        jumpRequested = true;
+    }
+
+    /// <summary>
+    /// Vrátí pohledovou matici kamery.
+    /// </summary>
+    /// <returns>Pohledová matice.</returns>
+    public Matrix4 GetViewMatrix()
+    {
+        Vector3 position = GetPosition();
+        return Matrix4.LookAt(position, position + Front, Up);
+    }
+
+    /// <summary>
+    /// Přepočítá směrové vektory z yaw a pitch.
     /// </summary>
     public void UpdateVectors()
     {
-        // Omezení vertikálního náklonu, aby se kamera nepřetočila
-        if (Pitch > 89.0f) Pitch = 89.0f;
-        if (Pitch < -89.0f) Pitch = -89.0f;
+        if (Pitch > 89.0f)
+        {
+            Pitch = 89.0f;
+        }
+
+        if (Pitch < -89.0f)
+        {
+            Pitch = -89.0f;
+        }
 
         float radYaw = MathHelper.DegreesToRadians(Yaw);
         float radPitch = MathHelper.DegreesToRadians(Pitch);
