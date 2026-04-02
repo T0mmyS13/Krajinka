@@ -15,8 +15,9 @@ public static class ObjLoader
     /// Načte OBJ soubor řádek po řádku.
     /// </summary>
     /// <param name="filename">Cesta k OBJ souboru.</param>
+    /// <param name="defaultColor">Výchozí barva vrcholů.</param>
     /// <returns>Vrací pole vrcholů a pole trojúhelníků.</returns>
-    public static (VertexNormal[] vertices, Triangle[] triangles) Load(string filename)
+    public static (VertexColorNormal[] vertices, Triangle[] triangles) Load(string filename, Vector3 defaultColor)
     {
         if (!File.Exists(filename))
         {
@@ -25,9 +26,13 @@ public static class ObjLoader
 
         string[] lines = File.ReadAllLines(filename);
 
-        List<VertexNormal> vertices = new List<VertexNormal>();
+        List<VertexColorNormal> vertices = new List<VertexColorNormal>();
         List<Triangle> triangles = new List<Triangle>();
         List<Vector3> normals = new List<Vector3>();
+
+        Dictionary<string, Vector3> materials = new Dictionary<string, Vector3>();
+        Vector3 currentColor = defaultColor;
+        string directory = Path.GetDirectoryName(filename) ?? string.Empty;
 
         for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
@@ -38,9 +43,27 @@ public static class ObjLoader
                 continue;
             }
 
+            if (line.StartsWith("mtllib ", StringComparison.Ordinal))
+            {
+                string mtlFile = Path.Combine(directory, line.Substring(7).Trim());
+                materials = LoadMtl(mtlFile);
+                continue;
+            }
+
+            if (line.StartsWith("usemtl ", StringComparison.Ordinal))
+            {
+                string materialName = line.Substring(7).Trim();
+                if (materials.TryGetValue(materialName, out Vector3 materialColor))
+                {
+                    currentColor = materialColor;
+                }
+
+                continue;
+            }
+
             if (line.StartsWith("v ", StringComparison.Ordinal))
             {
-                ParseVertex(line, vertices);
+                ParseVertex(line, vertices, defaultColor);
                 continue;
             }
 
@@ -52,7 +75,7 @@ public static class ObjLoader
 
             if (line.StartsWith("f ", StringComparison.Ordinal))
             {
-                ParseFace(line, vertices, normals, triangles);
+                ParseFace(line, vertices, normals, triangles, currentColor);
             }
         }
 
@@ -62,9 +85,54 @@ public static class ObjLoader
     }
 
     /// <summary>
+    /// Načte MTL soubor a vrátí diffuse barvy materiálů.
+    /// </summary>
+    /// <param name="mtlPath">Cesta k MTL souboru.</param>
+    /// <returns>Slovník materiálů a jejich barev.</returns>
+    private static Dictionary<string, Vector3> LoadMtl(string mtlPath)
+    {
+        Dictionary<string, Vector3> materials = new Dictionary<string, Vector3>();
+        if (!File.Exists(mtlPath))
+        {
+            return materials;
+        }
+
+        string currentMaterial = string.Empty;
+
+        foreach (string line in File.ReadAllLines(mtlPath))
+        {
+            string trimmed = line.Trim();
+
+            if (trimmed.StartsWith("newmtl ", StringComparison.Ordinal))
+            {
+                currentMaterial = trimmed.Substring(7).Trim();
+            }
+            else if (trimmed.StartsWith("Kd ", StringComparison.Ordinal) && currentMaterial != string.Empty)
+            {
+                string[] parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 4)
+                {
+                    continue;
+                }
+
+                float r = float.Parse(parts[1], CultureInfo.InvariantCulture);
+                float g = float.Parse(parts[2], CultureInfo.InvariantCulture);
+                float b = float.Parse(parts[3], CultureInfo.InvariantCulture);
+
+                materials[currentMaterial] = new Vector3(r, g, b);
+            }
+        }
+
+        return materials;
+    }
+
+    /// <summary>
     /// Načte vrchol z řádku v.
     /// </summary>
-    private static void ParseVertex(string line, List<VertexNormal> vertices)
+    /// <param name="line">Řádek OBJ souboru.</param>
+    /// <param name="vertices">Seznam vrcholů.</param>
+    /// <param name="defaultColor">Výchozí barva vrcholu.</param>
+    private static void ParseVertex(string line, List<VertexColorNormal> vertices, Vector3 defaultColor)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 4)
@@ -76,12 +144,14 @@ public static class ObjLoader
         float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
         float z = float.Parse(parts[3], CultureInfo.InvariantCulture);
 
-        vertices.Add(new VertexNormal(new Vector3(x, y, z), Vector3.Zero));
+        vertices.Add(new VertexColorNormal(new Vector3(x, y, z), defaultColor, Vector3.Zero));
     }
 
     /// <summary>
     /// Načte normálu z řádku vn.
     /// </summary>
+    /// <param name="line">Řádek OBJ souboru.</param>
+    /// <param name="normals">Seznam normál.</param>
     private static void ParseNormal(string line, List<Vector3> normals)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -106,7 +176,12 @@ public static class ObjLoader
     /// <summary>
     /// Načte trojúhelník z řádku f.
     /// </summary>
-    private static void ParseFace(string line, List<VertexNormal> vertices, List<Vector3> normals, List<Triangle> triangles)
+    /// <param name="line">Řádek OBJ souboru.</param>
+    /// <param name="vertices">Seznam vrcholů.</param>
+    /// <param name="normals">Seznam normál.</param>
+    /// <param name="triangles">Seznam trojúhelníků.</param>
+    /// <param name="faceColor">Barva aktuální plochy podle materiálu.</param>
+    private static void ParseFace(string line, List<VertexColorNormal> vertices, List<Vector3> normals, List<Triangle> triangles, Vector3 faceColor)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
@@ -141,12 +216,19 @@ public static class ObjLoader
             AddNormalToVertex(vertices, normals, i0, n0 - 1);
             AddNormalToVertex(vertices, normals, i1, n1 - 1);
             AddNormalToVertex(vertices, normals, i2, n2 - 1);
+
+            SetColorToVertex(vertices, i0, faceColor);
+            SetColorToVertex(vertices, i1, faceColor);
+            SetColorToVertex(vertices, i2, faceColor);
         }
     }
 
     /// <summary>
     /// Rozparsuje token vrcholu ve tvaru v/vt/vn.
     /// </summary>
+    /// <param name="token">Token vrcholu z řádku f.</param>
+    /// <param name="vertexIndex">Výstupní index vrcholu.</param>
+    /// <param name="normalIndex">Výstupní index normály.</param>
     private static void ParseFaceVertex(string token, out int vertexIndex, out int normalIndex)
     {
         string[] values = token.Split('/');
@@ -168,26 +250,44 @@ public static class ObjLoader
     /// <summary>
     /// Přičte normálu do vrcholu.
     /// </summary>
-    private static void AddNormalToVertex(List<VertexNormal> vertices, List<Vector3> normals, int vertexIndex, int normalIndex)
+    /// <param name="vertices">Seznam vrcholů.</param>
+    /// <param name="normals">Seznam normál.</param>
+    /// <param name="vertexIndex">Index vrcholu.</param>
+    /// <param name="normalIndex">Index normály.</param>
+    private static void AddNormalToVertex(List<VertexColorNormal> vertices, List<Vector3> normals, int vertexIndex, int normalIndex)
     {
         if (normalIndex < 0 || normalIndex >= normals.Count)
         {
             return;
         }
 
-        VertexNormal vertex = vertices[vertexIndex];
+        VertexColorNormal vertex = vertices[vertexIndex];
         vertex.Normal += normals[normalIndex];
+        vertices[vertexIndex] = vertex;
+    }
+
+    /// <summary>
+    /// Nastaví barvu vrcholu.
+    /// </summary>
+    /// <param name="vertices">Seznam vrcholů.</param>
+    /// <param name="vertexIndex">Index vrcholu.</param>
+    /// <param name="color">Barva vrcholu.</param>
+    private static void SetColorToVertex(List<VertexColorNormal> vertices, int vertexIndex, Vector3 color)
+    {
+        VertexColorNormal vertex = vertices[vertexIndex];
+        vertex.Color = color;
         vertices[vertexIndex] = vertex;
     }
 
     /// <summary>
     /// Znormalizuje normály všech vrcholů.
     /// </summary>
-    private static void NormalizeVertexNormals(List<VertexNormal> vertices)
+    /// <param name="vertices">Seznam vrcholů.</param>
+    private static void NormalizeVertexNormals(List<VertexColorNormal> vertices)
     {
         for (int i = 0; i < vertices.Count; i++)
         {
-            VertexNormal vertex = vertices[i];
+            VertexColorNormal vertex = vertices[i];
 
             if (vertex.Normal.LengthSquared > 0)
             {

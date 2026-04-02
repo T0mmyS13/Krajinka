@@ -11,32 +11,110 @@ namespace Krajinka;
 /// </summary>
 internal class Terrain : SceneObject
 {
+    /// <summary>
+    /// Vzdálenost sousedních vzorků terénu v jednotkách světa.
+    /// </summary>
     private const float SampleSpacing = 0.5f;
+
+    /// <summary>
+    /// Převodní koeficient výšky z mapy do jednotek světa.
+    /// </summary>
     private const float HeightScale = 0.05f;
+
+    /// <summary>
+    /// Minimální povolená šířka terénu ve vzorcích.
+    /// </summary>
     private const int MinimumTerrainWidth = 512;
+
+    /// <summary>
+    /// Minimální povolená hloubka terénu ve vzorcích.
+    /// </summary>
     private const int MinimumTerrainDepth = 512;
 
+    /// <summary>
+    /// Šířka mapy terénu ve vzorcích.
+    /// </summary>
     private readonly int width;
+
+    /// <summary>
+    /// Hloubka mapy terénu ve vzorcích.
+    /// </summary>
     private readonly int depth;
 
+    /// <summary>
+    /// Vrcholová data terénu.
+    /// </summary>
     private readonly VertexColorNormal[] vertices;
+
+    /// <summary>
+    /// Indexová data terénu.
+    /// </summary>
     private readonly Triangle[] triangles;
 
+    /// <summary>
+    /// ID vertex array objektu terénu.
+    /// </summary>
     private readonly int VAO;
+
+    /// <summary>
+    /// ID vertex buffer objektu terénu.
+    /// </summary>
     private readonly int VBO;
+
+    /// <summary>
+    /// ID index buffer objektu terénu.
+    /// </summary>
     private readonly int IBO;
+
+    /// <summary>
+    /// Indikuje, zda byly prostředky terénu už uvolněny.
+    /// </summary>
     private bool disposed;
 
+    /// <summary>
+    /// Výšky terénu v mřížce [x, z].
+    /// </summary>
     public readonly float[,] Heights;
+
+    /// <summary>
+    /// Kódy objektů z G kanálu mapy v mřížce [x, z].
+    /// </summary>
     public readonly byte[,] ObjectCodes;
+
+    /// <summary>
+    /// Hodnoty modrého kanálu mapy v mřížce [x, z].
+    /// </summary>
     public readonly byte[,] BlueValues;
+
+    /// <summary>
+    /// Hodnoty alfa kanálu mapy v mřížce [x, z].
+    /// </summary>
     public readonly byte[,] AlphaValues;
 
+    /// <summary>
+    /// Minimální X souřadnice pohybu po terénu.
+    /// </summary>
     public float MinX;
+
+    /// <summary>
+    /// Maximální X souřadnice pohybu po terénu.
+    /// </summary>
     public float MaxX;
+
+    /// <summary>
+    /// Minimální Z souřadnice pohybu po terénu.
+    /// </summary>
     public float MinZ;
+
+    /// <summary>
+    /// Maximální Z souřadnice pohybu po terénu.
+    /// </summary>
     public float MaxZ;
 
+    /// <summary>
+    /// Vytvoří terén z PNG mapy.
+    /// </summary>
+    /// <param name="heightMapRelativePath">Relativní cesta k mapě.</param>
     public Terrain(string heightMapRelativePath)
     {
         LoadMapFromPng(
@@ -84,6 +162,11 @@ internal class Terrain : SceneObject
         GL.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// Ověří minimální rozměry načtené mapy.
+    /// </summary>
+    /// <param name="width">Šířka mapy.</param>
+    /// <param name="depth">Hloubka mapy.</param>
     private static void ValidateSize(int width, int depth)
     {
         if (width < MinimumTerrainWidth)
@@ -97,6 +180,9 @@ internal class Terrain : SceneObject
         }
     }
 
+    /// <summary>
+    /// Nastaví světové hranice terénu.
+    /// </summary>
     private void SetBounds()
     {
         MinX = 0f;
@@ -105,6 +191,16 @@ internal class Terrain : SceneObject
         MaxZ = (depth - 1) * SampleSpacing;
     }
 
+    /// <summary>
+    /// Načte PNG mapu a rozparsuje z ní výšky a datové kanály.
+    /// </summary>
+    /// <param name="heightMapRelativePath">Relativní cesta k mapě.</param>
+    /// <param name="loadedWidth">Výstupní šířka mapy.</param>
+    /// <param name="loadedDepth">Výstupní hloubka mapy.</param>
+    /// <param name="loadedHeights">Výstupní pole výšek.</param>
+    /// <param name="loadedObjectCodes">Výstupní pole kódů objektů.</param>
+    /// <param name="loadedBlueValues">Výstupní pole modrého kanálu.</param>
+    /// <param name="loadedAlphaValues">Výstupní pole alfa kanálu.</param>
     private static void LoadMapFromPng(
         string heightMapRelativePath,
         out int loadedWidth,
@@ -156,6 +252,10 @@ internal class Terrain : SceneObject
         }
     }
 
+    /// <summary>
+    /// Vytvoří vrcholová data mesh terénu.
+    /// </summary>
+    /// <returns>Pole vrcholů terénu.</returns>
     private VertexColorNormal[] BuildMeshVertices()
     {
         VertexColorNormal[] result = new VertexColorNormal[width * depth];
@@ -179,6 +279,10 @@ internal class Terrain : SceneObject
         return result;
     }
 
+    /// <summary>
+    /// Vytvoří indexová data trojúhelníků terénu.
+    /// </summary>
+    /// <returns>Pole trojúhelníků.</returns>
     private Triangle[] BuildMeshTriangles()
     {
         Triangle[] result = new Triangle[(width - 1) * (depth - 1) * 2];
@@ -201,11 +305,23 @@ internal class Terrain : SceneObject
         return result;
     }
 
+    /// <summary>
+    /// Přepočítá 2D souřadnice mřížky na index do vrcholového pole.
+    /// </summary>
+    /// <param name="x">Souřadnice X v mřížce.</param>
+    /// <param name="z">Souřadnice Z v mřížce.</param>
+    /// <returns>Index vrcholu.</returns>
     private int ToVertexIndex(int x, int z)
     {
         return z * width + x;
     }
 
+    /// <summary>
+    /// Vypočítá normálu vrcholu podle okolních výšek.
+    /// </summary>
+    /// <param name="gridX">Souřadnice X v mřížce.</param>
+    /// <param name="gridZ">Souřadnice Z v mřížce.</param>
+    /// <returns>Normálový vektor.</returns>
     private Vector3 CalculateNormalAtGrid(int gridX, int gridZ)
     {
         int leftX = Math.Max(gridX - 1, 0);
@@ -237,6 +353,11 @@ internal class Terrain : SceneObject
         return normal;
     }
 
+    /// <summary>
+    /// Převede hodnotu alfa kanálu na odstín zelené barvy.
+    /// </summary>
+    /// <param name="alphaValue">Hodnota alfa kanálu 0..255.</param>
+    /// <returns>Barva vrcholu terénu.</returns>
     private static Vector3 GetGreenSpectrumColor(byte alphaValue)
     {
         float normalized = alphaValue / 255.0f;
@@ -257,6 +378,12 @@ internal class Terrain : SceneObject
         return new Vector3(red, green, blue);
     }
 
+    /// <summary>
+    /// Vrátí výšku terénu v dané světové souřadnici.
+    /// </summary>
+    /// <param name="x">Souřadnice X ve světě.</param>
+    /// <param name="z">Souřadnice Z ve světě.</param>
+    /// <returns>Interpolovaná výška terénu.</returns>
     public float GetHeightAt(float x, float z)
     {
         float clampedX = MathHelper.Clamp(x, MinX, MaxX);
@@ -285,6 +412,9 @@ internal class Terrain : SceneObject
         return finalHeight;
     }
 
+    /// <summary>
+    /// Vykreslí terén.
+    /// </summary>
     public override void Draw()
     {
         GL.BindVertexArray(VAO);
@@ -292,6 +422,9 @@ internal class Terrain : SceneObject
         GL.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// Uvolní grafické prostředky terénu.
+    /// </summary>
     public override void Dispose()
     {
         if (disposed)

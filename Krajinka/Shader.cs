@@ -11,10 +11,26 @@ namespace Krajinka;
 /// </summary>
 public class Shader : IDisposable
 {
+    /// <summary>
+    /// Identifikátor OpenGL programu.
+    /// </summary>
     public int ProgramId;
 
-    private readonly Dictionary<string, int> uniforms = new();
+    /// <summary>
+    /// Cache umístění uniform proměnných.
+    /// </summary>
+    private readonly Dictionary<string, int> uniforms = new Dictionary<string, int>();
 
+    /// <summary>
+    /// Indikuje, zda už byl shader uvolněn.
+    /// </summary>
+    private bool disposed;
+
+    /// <summary>
+    /// Vytvoří shader program z vertex a fragment shaderu.
+    /// </summary>
+    /// <param name="vertexPath">Relativní cesta k vertex shaderu.</param>
+    /// <param name="fragmentPath">Relativní cesta k fragment shaderu.</param>
     public Shader(string vertexPath, string fragmentPath)
     {
         int vertexShader = CompileShader(vertexPath, ShaderType.VertexShader);
@@ -28,11 +44,20 @@ public class Shader : IDisposable
         LoadUniforms();
     }
 
+    /// <summary>
+    /// Aktivuje shader program.
+    /// </summary>
     public void Use()
     {
         GL.UseProgram(ProgramId);
     }
 
+    /// <summary>
+    /// Nastaví uniform proměnnou v shaderu.
+    /// </summary>
+    /// <typeparam name="T">Datový typ uniformu.</typeparam>
+    /// <param name="name">Název uniformu.</param>
+    /// <param name="value">Hodnota uniformu.</param>
     public void SetUniform<T>(string name, T value)
     {
         int location = GetUniformLocation(name);
@@ -63,6 +88,12 @@ public class Shader : IDisposable
         }
     }
 
+    /// <summary>
+    /// Načte a zkompiluje shader daného typu.
+    /// </summary>
+    /// <param name="relativePath">Relativní cesta k souboru shaderu.</param>
+    /// <param name="shaderType">Typ shaderu.</param>
+    /// <returns>ID zkompilovaného shaderu.</returns>
     private int CompileShader(string relativePath, ShaderType shaderType)
     {
         string fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
@@ -82,6 +113,11 @@ public class Shader : IDisposable
         return shader;
     }
 
+    /// <summary>
+    /// Vytvoří a nalinkuje shader program.
+    /// </summary>
+    /// <param name="vertexShader">ID vertex shaderu.</param>
+    /// <param name="fragmentShader">ID fragment shaderu.</param>
     private void LinkShader(int vertexShader, int fragmentShader)
     {
         ProgramId = GL.CreateProgram();
@@ -97,6 +133,11 @@ public class Shader : IDisposable
         }
     }
 
+    /// <summary>
+    /// Vrátí umístění uniform proměnné z cache.
+    /// </summary>
+    /// <param name="name">Název uniform proměnné.</param>
+    /// <returns>Umístění uniform proměnné, nebo -1 pokud neexistuje.</returns>
     private int GetUniformLocation(string name)
     {
         if (uniforms.TryGetValue(name, out int location))
@@ -108,6 +149,9 @@ public class Shader : IDisposable
         return -1;
     }
 
+    /// <summary>
+    /// Načte všechny aktivní uniform proměnné programu do cache.
+    /// </summary>
     private void LoadUniforms()
     {
         GL.GetProgram(ProgramId, GetProgramParameterName.ActiveUniforms, out int uniformCount);
@@ -123,8 +167,9 @@ public class Shader : IDisposable
         }
     }
 
-    private bool disposed;
-
+    /// <summary>
+    /// Uvolní OpenGL shader program.
+    /// </summary>
     public void Dispose()
     {
         if (disposed)

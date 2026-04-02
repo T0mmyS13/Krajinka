@@ -8,6 +8,9 @@ namespace Krajinka;
 /// </summary>
 internal class Camera : SceneObject
 {
+    /// <summary>
+    /// Tolerance pro přichycení kamery k zemi při dopadu.
+    /// </summary>
     private const float GroundSnapEpsilon = 0.08f;
 
     /// <summary>
@@ -75,8 +78,6 @@ internal class Camera : SceneObject
     /// </summary>
     public Terrain? Terrain;
 
-    public Vector3 Velocity;
-
     /// <summary>
     /// Počáteční rychlost výskoku.
     /// </summary>
@@ -92,7 +93,19 @@ internal class Camera : SceneObject
     /// </summary>
     public bool IsGrounded = true;
 
+    /// <summary>
+    /// Aktuální rychlost kamery ve světových osách.
+    /// </summary>
+    public Vector3 Velocity;
+
+    /// <summary>
+    /// Aktuální vertikální rychlost kamery.
+    /// </summary>
     private float verticalVelocity;
+
+    /// <summary>
+    /// Indikuje, že byl vyžádán výskok.
+    /// </summary>
     private bool jumpRequested;
 
     /// <summary>
@@ -119,6 +132,10 @@ internal class Camera : SceneObject
         return Matrix4.CreatePerspectiveFieldOfView(MathHelper.DegreesToRadians(45.0f), aspectRatio, 0.1f, 1000.0f);
     }
 
+    /// <summary>
+    /// Aktualizuje pozici, rychlost a stav skoku kamery.
+    /// </summary>
+    /// <param name="dt">Doba od posledního snímku v sekundách.</param>
     public override void Update(float dt)
     {
         base.Update(dt);

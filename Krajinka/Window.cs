@@ -13,33 +13,99 @@ namespace Krajinka;
 /// </summary>
 public class Window : GameWindow
 {
+    /// <summary>
+    /// Výška očí kamery nad terénem.
+    /// </summary>
     private const float EyeHeight = 1.8f;
+
+    /// <summary>
+    /// Minimální pohyb myši, od kterého se zpracuje změna pohledu.
+    /// </summary>
     private const float MouseDeltaEpsilon = 0.0001f;
+
+    /// <summary>
+    /// Rozestup vzorků terénu v mapě objektů.
+    /// </summary>
     private const float TerrainSampleSpacing = 0.5f;
+
+    /// <summary>
+    /// Počet snímků po přepnutí fullscreen, kdy se resetuje myš.
+    /// </summary>
     private const int MouseFSResetFrames = 3;
 
-    private readonly List<SceneObject> Objects = new();
+    /// <summary>
+    /// Seznam objektů aktuálně přidaných do scény.
+    /// </summary>
+    private readonly List<SceneObject> Objects = new List<SceneObject>();
+
+    /// <summary>
+    /// Generátor náhodných čísel pro rotaci a měřítko objektů.
+    /// </summary>
     private readonly Random random = new Random();
 
+    /// <summary>
+    /// Shader použitý pro vykreslení scény.
+    /// </summary>
     private Shader shader;
+
+    /// <summary>
+    /// Informace o aktivním viewportu.
+    /// </summary>
     private Viewport viewport;
+
+    /// <summary>
+    /// Kamera hráče.
+    /// </summary>
     private Camera camera;
+
+    /// <summary>
+    /// Terén načtený z mapy.
+    /// </summary>
     private Terrain terrain;
+
+    /// <summary>
+    /// Hlavní světlo scény.
+    /// </summary>
     private Light lightSun;
 
-    private readonly Queue<double> frameTimes = new();
+    /// <summary>
+    /// Historie časů snímků pro výpočet FPS.
+    /// </summary>
+    private readonly Queue<double> frameTimes = new Queue<double>();
+
+    /// <summary>
+    /// Součet časů snímků v aktuálním FPS okně.
+    /// </summary>
     private double frameTimeSum;
 
+    /// <summary>
+    /// Poslední známá pozice myši.
+    /// </summary>
     private Vector2 lastMousePos;
+
+    /// <summary>
+    /// Indikuje první snímek pohybu myši po startu/režimu fullscreen.
+    /// </summary>
     private bool firstMove = true;
-    private bool isBorderlessFullscreen;
+
+    /// <summary>
+    /// Počet snímků, po které se ignoruje delta myši po změně režimu okna.
+    /// </summary>
     private int mouseResetFrames;
 
+    /// <summary>
+    /// Vytvoří hlavní okno aplikace.
+    /// </summary>
+    /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
+    /// <param name="nativeWindowSettings">Nativní nastavení okna.</param>
     public Window(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
         : base(gameWindowSettings, nativeWindowSettings)
     {
     }
 
+    /// <summary>
+    /// Inicializuje grafiku, scénu a vstupy po vytvoření okna.
+    /// </summary>
     protected override void OnLoad()
     {
         base.OnLoad();
@@ -72,6 +138,9 @@ public class Window : GameWindow
         CursorState = CursorState.Grabbed;
     }
 
+    /// <summary>
+    /// Vytvoří objekty podle zeleného kanálu mapy objektů.
+    /// </summary>
     private void CreateObjectsFromGreenChannel()
     {
         int mapWidth = terrain.ObjectCodes.GetLength(0);
@@ -119,18 +188,33 @@ public class Window : GameWindow
         }
     }
 
+    /// <summary>
+    /// Vrátí náhodné měřítko v daném rozsahu.
+    /// </summary>
+    /// <param name="minScale">Minimální měřítko.</param>
+    /// <param name="maxScale">Maximální měřítko.</param>
+    /// <returns>Náhodná hodnota měřítka.</returns>
     private float GetRandomScale(float minScale, float maxScale)
     {
         float value = (float)random.NextDouble();
         return minScale + (value * (maxScale - minScale));
     }
 
+    /// <summary>
+    /// Vrátí náhodnou rotaci kolem osy Y v radiánech.
+    /// </summary>
+    /// <returns>Náhodná rotace v radiánech.</returns>
     private float GetRandomRotationY()
     {
         float degrees = (float)(random.NextDouble() * 360.0);
         return MathHelper.DegreesToRadians(degrees);
     }
 
+    /// <summary>
+    /// Vykreslí scénu do zadaného viewportu.
+    /// </summary>
+    /// <param name="viewportState">Aktuální viewport.</param>
+    /// <param name="cameraState">Aktuální stav kamery.</param>
     private void DrawScene(Viewport viewportState, Camera cameraState)
     {
         (Vector2i position, Vector2i size) = viewportState.GetPixelViewport();
@@ -148,15 +232,18 @@ public class Window : GameWindow
         shader.SetUniform("lightPosWorld", lightSun.Position);
         shader.SetUniform("lightColor", lightSun.Color);
         shader.SetUniform("lightIntensity", lightSun.Intensity);
-        shader.SetUniform("cameraposWorld", cameraState.GetPosition());
 
-        foreach (var sceneObject in Objects)
+        foreach (SceneObject sceneObject in Objects)
         {
             shader.SetUniform("model", sceneObject.GetModelMatrix());
             sceneObject.Draw();
         }
     }
 
+    /// <summary>
+    /// Vykreslí aktuální snímek.
+    /// </summary>
+    /// <param name="e">Časové informace snímku.</param>
     protected override void OnRenderFrame(FrameEventArgs e)
     {
         base.OnRenderFrame(e);
@@ -181,6 +268,10 @@ public class Window : GameWindow
         }
     }
 
+    /// <summary>
+    /// Aktualizuje logiku scény a zpracování vstupu.
+    /// </summary>
+    /// <param name="e">Časové informace snímku.</param>
     protected override void OnUpdateFrame(FrameEventArgs e)
     {
         base.OnUpdateFrame(e);
@@ -284,6 +375,10 @@ public class Window : GameWindow
         }
     }
 
+    /// <summary>
+    /// Reaguje na změnu velikosti okna.
+    /// </summary>
+    /// <param name="e">Informace o nové velikosti.</param>
     protected override void OnResize(ResizeEventArgs e)
     {
         base.OnResize(e);
@@ -293,15 +388,24 @@ public class Window : GameWindow
         GL.Viewport(position.X, position.Y, size.X, size.Y);
     }
 
+    /// <summary>
+    /// Uvolní prostředky při zavírání okna.
+    /// </summary>
     protected override void OnUnload()
     {
         base.OnUnload();
 
         shader.Dispose();
-        
-        foreach (var obj in Objects) obj.Dispose();
+
+        foreach (SceneObject obj in Objects)
+        {
+            obj.Dispose();
+        }
     }
 
+    /// <summary>
+    /// Přepne okno mezi běžným a borderless fullscreen režimem.
+    /// </summary>
     private void ToggleFullscreen()
     {
         if (WindowState == WindowState.Normal)

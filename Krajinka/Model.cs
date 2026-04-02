@@ -10,31 +10,53 @@ namespace Krajinka;
 /// </summary>
 internal class Model : SceneObject
 {
+    /// <summary>
+    /// Počet indexů použitých při vykreslení modelu.
+    /// </summary>
     private readonly int indexCount;
+
+    /// <summary>
+    /// ID vertex array objektu.
+    /// </summary>
     private int VAO;
+
+    /// <summary>
+    /// ID vertex buffer objektu.
+    /// </summary>
     private int VBO;
+
+    /// <summary>
+    /// ID index buffer objektu.
+    /// </summary>
     private int IBO;
 
+    /// <summary>
+    /// Indikuje, zda byl model už uvolněn.
+    /// </summary>
     private bool disposed;
 
     /// <summary>
     /// Vytvoří objekt z OBJ souboru.
     /// </summary>
     /// <param name="objRelativePath">Relativní cesta k OBJ souboru.</param>
-    /// <param name="color">Barva objektu.</param>
+    /// <param name="color">Výchozí barva objektu, pokud model nepoužívá MTL.</param>
     /// <param name="position">Pozice objektu ve scéně.</param>
     public Model(string objRelativePath, Vector3 color, Vector3 position)
     {
         SetPosition(position);
 
         string fullPath = Path.Combine(AppContext.BaseDirectory, objRelativePath);
-        (VertexNormal[] loadedVertices, Triangle[] triangles) = ObjLoader.Load(fullPath);
-        VertexColorNormal[] vertices = ConvertVertices(loadedVertices, color);
+        (VertexColorNormal[] vertices, Triangle[] triangles) = ObjLoader.Load(fullPath, color);
 
         indexCount = triangles.Length * 3;
         CreateModelBuffers(vertices, triangles);
     }
 
+    /// <summary>
+    /// Vytvoří OpenGL buffery pro model.
+    /// </summary>
+    /// <param name="vertices">Vrcholová data.</param>
+    /// <param name="triangles">Indexová data trojúhelníků.</param>
     private void CreateModelBuffers(VertexColorNormal[] vertices, Triangle[] triangles)
     {
         VAO = GL.GenVertexArray();
@@ -59,6 +81,9 @@ internal class Model : SceneObject
         GL.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// Vykreslí model.
+    /// </summary>
     public override void Draw()
     {
         GL.BindVertexArray(VAO);
@@ -66,6 +91,9 @@ internal class Model : SceneObject
         GL.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// Uvolní OpenGL prostředky modelu.
+    /// </summary>
     public override void Dispose()
     {
         if (disposed)
@@ -77,17 +105,5 @@ internal class Model : SceneObject
         GL.DeleteBuffer(IBO);
         GL.DeleteVertexArray(VAO);
         disposed = true;
-    }
-
-    private static VertexColorNormal[] ConvertVertices(VertexNormal[] loadedVertices, Vector3 color)
-    {
-        VertexColorNormal[] result = new VertexColorNormal[loadedVertices.Length];
-
-        for (int i = 0; i < loadedVertices.Length; i++)
-        {
-            result[i] = new VertexColorNormal(loadedVertices[i].Position, color, loadedVertices[i].Normal);
-        }
-
-        return result;
     }
 }

@@ -7,11 +7,29 @@ namespace Krajinka;
 /// </summary>
 internal class SceneObject : IDisposable
 {
+    /// <summary>
+    /// Pozice objektu ve světě.
+    /// </summary>
     protected Vector3 _position;
+
+    /// <summary>
+    /// Měřítko objektu.
+    /// </summary>
     protected Vector3 _scale = Vector3.One;
+
+    /// <summary>
+    /// Rotace objektu v radiánech.
+    /// </summary>
     protected Vector3 _rotation;
 
+    /// <summary>
+    /// Indikuje, zda je potřeba přepočítat modelovou matici.
+    /// </summary>
     protected bool _isModelMatrixDirty = true;
+
+    /// <summary>
+    /// Cached modelová matice objektu.
+    /// </summary>
     protected Matrix4 _modelMatrix;
 
     /// <summary>

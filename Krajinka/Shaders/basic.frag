@@ -7,7 +7,6 @@ out vec4 outColor;
 uniform vec4 lightPosWorld;
 uniform vec3 lightColor;
 uniform float lightIntensity;
-uniform vec3 cameraposWorld;
 
 void main()
 {
@@ -16,18 +15,8 @@ void main()
 
     float NdotL = max(0.0, dot(normal, lightDir));
 
-    vec3 specular = vec3(0.0);
+    vec3 ambient = vec3(0.2) * vertexColor;
+    vec3 diffuse = lightColor * lightIntensity * NdotL * vertexColor;
 
-    if (NdotL > 0.0)
-    {
-        vec3 reflectDir = reflect(-lightDir, normal);
-        vec3 viewDir = normalize(cameraposWorld - fragmentWorld);
-        float spec = pow(max(0.0, dot(reflectDir, viewDir)), 5.0);
-        specular = lightColor * lightIntensity * spec;
-    }
-
-    vec3 diffuse = lightColor * lightIntensity * NdotL;
-    vec3 lighting = diffuse + specular;
-
-    outColor = vec4(vertexColor * lighting, 1.0);
+    outColor = vec4(ambient + diffuse, 1.0);
 }
