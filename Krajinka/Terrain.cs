@@ -32,6 +32,26 @@ internal class Terrain : SceneObject
     private const int MinimumTerrainDepth = 512;
 
     /// <summary>
+    /// Výška, od které se začíná přecházet z trávy do hlíny.
+    /// </summary>
+    private const float GrassToDirtThreshold = 0.35f;
+
+    /// <summary>
+    /// Výška, od které se začíná přecházet z hlíny do skály.
+    /// </summary>
+    private const float DirtToRockThreshold = 0.70f;
+
+    /// <summary>
+    /// Výška, od které se začíná přecházet ze skály do sněhu.
+    /// </summary>
+    private const float RockToSnowThreshold = 0.90f;
+
+    /// <summary>
+    /// Minimální výškové rozpětí terénu pro výskyt sněhu.
+    /// </summary>
+    private const float SnowHeightRangeThreshold = 60.0f;
+
+    /// <summary>
     /// Šířka mapy terénu ve vzorcích.
     /// </summary>
     private readonly int width;
@@ -40,6 +60,16 @@ internal class Terrain : SceneObject
     /// Hloubka mapy terénu ve vzorcích.
     /// </summary>
     private readonly int depth;
+
+    /// <summary>
+    /// Nejnižší výška terénu v mapě.
+    /// </summary>
+    private float minHeight;
+
+    /// <summary>
+    /// Nejvyšší výška terénu v mapě.
+    /// </summary>
+    private float maxHeight;
 
     /// <summary>
     /// Vrcholová data terénu.
@@ -135,6 +165,7 @@ internal class Terrain : SceneObject
         BlueValues = loadedBlueValues;
         AlphaValues = loadedAlphaValues;
 
+        SetHeightRange();
         SetBounds();
 
         vertices = BuildMeshVertices();
@@ -177,6 +208,32 @@ internal class Terrain : SceneObject
         if (depth < MinimumTerrainDepth)
         {
             throw new ArgumentOutOfRangeException(nameof(depth), "Hloubka terénu musi být alespoň 512 vzorku.");
+        }
+    }
+
+    /// <summary>
+    /// Nastaví minimální a maximální výšku terénu.
+    /// </summary>
+    private void SetHeightRange()
+    {
+        minHeight = Heights[0, 0];
+        maxHeight = Heights[0, 0];
+
+        for (int z = 0; z < depth; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float height = Heights[x, z];
+                if (height < minHeight)
+                {
+                    minHeight = height;
+                }
+
+                if (height > maxHeight)
+                {
+                    maxHeight = height;
+                }
+            }
         }
     }
 
@@ -269,7 +326,7 @@ internal class Terrain : SceneObject
                 float worldZ = z * SampleSpacing;
 
                 Vector3 normal = CalculateNormalAtGrid(x, z);
-                Vector3 color = GetGreenSpectrumColor(AlphaValues[x, z]);
+                Vector3 color = GetHeightColor(worldY);
 
                 int index = ToVertexIndex(x, z);
                 result[index] = new VertexColorNormal(new Vector3(worldX, worldY, worldZ), color, normal);
@@ -354,28 +411,52 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
-    /// Převede hodnotu alfa kanálu na odstín zelené barvy.
+    /// Převede výšku terénu na barvu od trávy přes hlínu a skálu až po sníh.
     /// </summary>
-    /// <param name="alphaValue">Hodnota alfa kanálu 0..255.</param>
+    /// <param name="height">Výška vrcholu v jednotkách světa.</param>
     /// <returns>Barva vrcholu terénu.</returns>
-    private static Vector3 GetGreenSpectrumColor(byte alphaValue)
+    private Vector3 GetHeightColor(float height)
     {
-        float normalized = alphaValue / 255.0f;
-        float noise = (normalized - 0.5f) * 2.0f;
+        float normalizedHeight = 0.0f;
+        float heightRange = maxHeight - minHeight;
+        if (heightRange > 0.0f)
+        {
+            normalizedHeight = (height - minHeight) / heightRange;
+        }
 
-        float baseRed = 0.08f;
-        float baseGreen = 0.30f;
-        float baseBlue = 0.08f;
+        normalizedHeight = MathHelper.Clamp(normalizedHeight, 0.0f, 1.0f);
 
-        float redNoise = 0.03f;
-        float greenNoise = 0.08f;
-        float blueNoise = 0.03f;
+        Vector3 grassColor = new Vector3(0.14f, 0.42f, 0.14f);
+        Vector3 dirtColor = new Vector3(0.45f, 0.32f, 0.20f);
+        Vector3 rockColor = new Vector3(0.56f, 0.55f, 0.54f);
+        Vector3 snowColor = new Vector3(0.96f, 0.97f, 0.99f);
 
-        float red = MathHelper.Clamp(baseRed + noise * redNoise, 0.0f, 1.0f);
-        float green = MathHelper.Clamp(baseGreen + noise * greenNoise, 0.0f, 1.0f);
-        float blue = MathHelper.Clamp(baseBlue + noise * blueNoise, 0.0f, 1.0f);
+        bool snowEnabled = heightRange >= SnowHeightRangeThreshold;
 
-        return new Vector3(red, green, blue);
+        if (normalizedHeight < GrassToDirtThreshold)
+        {
+            float t = normalizedHeight / GrassToDirtThreshold;
+            return Vector3.Lerp(grassColor, dirtColor, t);
+        }
+
+        if (normalizedHeight < DirtToRockThreshold)
+        {
+            float t = (normalizedHeight - GrassToDirtThreshold) / (DirtToRockThreshold - GrassToDirtThreshold);
+            return Vector3.Lerp(dirtColor, rockColor, t);
+        }
+
+        if (!snowEnabled)
+        {
+            return rockColor;
+        }
+
+        if (normalizedHeight < RockToSnowThreshold)
+        {
+            float t = (normalizedHeight - DirtToRockThreshold) / (RockToSnowThreshold - DirtToRockThreshold);
+            return Vector3.Lerp(rockColor, snowColor, t);
+        }
+
+        return snowColor;
     }
 
     /// <summary>
