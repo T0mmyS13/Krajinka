@@ -41,7 +41,7 @@ internal class Camera : SceneObject
     /// <summary>
     /// Rychlost pohybu kamery.
     /// </summary>
-    public float MovementSpeed = 6.0f;
+    public float MovementSpeed = 18.23f;
 
     /// <summary>
     /// Výška očí nad terénem.
@@ -81,12 +81,12 @@ internal class Camera : SceneObject
     /// <summary>
     /// Počáteční rychlost výskoku.
     /// </summary>
-    public float JumpSpeed = 6.0f;
+    public float JumpSpeed = 7.4f;
 
     /// <summary>
     /// Gravitační zrychlení.
     /// </summary>
-    public float Gravity = 18.0f;
+    public float Gravity = 19.62f;
 
     /// <summary>
     /// Indikuje, zda je kamera na zemi.

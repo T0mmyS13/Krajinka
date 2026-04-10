@@ -94,13 +94,20 @@ public class Window : GameWindow
     private int mouseResetFrames;
 
     /// <summary>
+    /// Relativní cesta k vybrané mapě terénu.
+    /// </summary>
+    private readonly string selectedMapPath;
+
+    /// <summary>
     /// Vytvoří hlavní okno aplikace.
     /// </summary>
     /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
     /// <param name="nativeWindowSettings">Nativní nastavení okna.</param>
-    public Window(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
+    /// <param name="terrainMapPath">Relativní cesta k mapě terénu.</param>
+    public Window(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings, string terrainMapPath)
         : base(gameWindowSettings, nativeWindowSettings)
     {
+        selectedMapPath = terrainMapPath;
     }
 
     /// <summary>
@@ -116,10 +123,10 @@ public class Window : GameWindow
 
         shader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "basic.frag"));
 
-        terrain = new Terrain(Path.Combine("Data", "maps", "test.png"));
+        terrain = new Terrain(selectedMapPath);
         Objects.Add(terrain);
 
-        CreateObjectsFromGreenChannel();
+        CreateObjects();
 
         float startX = 25.0f;
         float startZ = 25.0f;
@@ -141,7 +148,7 @@ public class Window : GameWindow
     /// <summary>
     /// Vytvoří objekty podle zeleného kanálu mapy objektů.
     /// </summary>
-    private void CreateObjectsFromGreenChannel()
+    private void CreateObjects()
     {
         int mapWidth = terrain.ObjectCodes.GetLength(0);
         int mapDepth = terrain.ObjectCodes.GetLength(1);
