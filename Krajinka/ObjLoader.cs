@@ -164,13 +164,7 @@ public static class ObjLoader
         float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
         float z = float.Parse(parts[3], CultureInfo.InvariantCulture);
 
-        Vector3 normal = new Vector3(x, y, z);
-        if (normal.LengthSquared > 0)
-        {
-            normal = Vector3.Normalize(normal);
-        }
-
-        normals.Add(normal);
+        normals.Add(new Vector3(x, y, z));
     }
 
     /// <summary>

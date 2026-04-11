@@ -28,7 +28,7 @@ internal class SceneObject : IDisposable
     protected bool _isModelMatrixDirty = true;
 
     /// <summary>
-    /// Cached modelová matice objektu.
+    /// Cacheovaná modelová matice objektu.
     /// </summary>
     protected Matrix4 _modelMatrix;
 
