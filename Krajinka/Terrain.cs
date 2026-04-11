@@ -374,37 +374,32 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
-    /// Vypočítá normálu vrcholu podle okolních výšek.
+    /// Vypočítá normálu vrcholu ze čtyř sousedních výšek (vlevo, vpravo, dole, nahoře).
     /// </summary>
     /// <param name="gridX">Souřadnice X v mřížce.</param>
     /// <param name="gridZ">Souřadnice Z v mřížce.</param>
-    /// <returns>Normálový vektor.</returns>
+    /// <returns>Znormalizovaný normálový vektor.</returns>
     private Vector3 CalculateNormalAtGrid(int gridX, int gridZ)
     {
-        int leftX = Math.Max(gridX - 1, 0);
-        int rightX = Math.Min(gridX + 1, width - 1);
-        int downZ = Math.Max(gridZ - 1, 0);
-        int upZ = Math.Min(gridZ + 1, depth - 1);
+        float s = SampleSpacing;
 
-        float distanceX = (rightX - leftX) * SampleSpacing;
-        float distanceZ = (upZ - downZ) * SampleSpacing;
+        float x = gridX * s;
+        float z = gridZ * s;
 
-        float heightChangePerX = 0.0f;
-        if (distanceX > 0.0f)
-        {
-            heightChangePerX = (Heights[rightX, gridZ] - Heights[leftX, gridZ]) / distanceX;
-        }
+        float heightLeft = GetHeightAt(x - s, z);
+        float heightRight = GetHeightAt(x + s, z);
+        float heightDown = GetHeightAt(x, z - s);
+        float heightUp = GetHeightAt(x, z + s);
 
-        float heightChangePerZ = 0.0f;
-        if (distanceZ > 0.0f)
-        {
-            heightChangePerZ = (Heights[gridX, upZ] - Heights[gridX, downZ]) / distanceZ;
-        }
+        Vector3 normal = new Vector3(heightLeft - heightRight, 2.0f * s, heightDown - heightUp);
 
-        Vector3 normal = new Vector3(-heightChangePerX, 1.0f, -heightChangePerZ);
         if (normal.LengthSquared > 0.0f)
         {
             normal = Vector3.Normalize(normal);
+        }
+        else
+        {
+            normal = Vector3.UnitY;
         }
 
         return normal;
@@ -486,11 +481,10 @@ internal class Terrain : SceneObject
         float h01 = Heights[x0, z1];
         float h11 = Heights[x1, z1];
 
-        float row0Height = h00 + (h10 - h00) * blendX;
-        float row1Height = h01 + (h11 - h01) * blendX;
-        float finalHeight = row0Height + (row1Height - row0Height) * blendZ;
+        float row0Height = MathHelper.Lerp(h00, h10, blendX);
+        float row1Height = MathHelper.Lerp(h01, h11, blendX);
 
-        return finalHeight;
+        return MathHelper.Lerp(row0Height, row1Height, blendZ);
     }
 
     /// <summary>

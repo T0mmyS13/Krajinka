@@ -5,13 +5,8 @@ namespace Krajinka;
 /// <summary>
 /// Jednoduchá reprezentace světla.
 /// </summary>
-internal class Light
+internal class Light : SceneObject
 {
-    /// <summary>
-    /// Pozice světla ve světě (W=1 pro bodové světlo).
-    /// </summary>
-    public Vector4 Position;
-
     /// <summary>
     /// Barva světla.
     /// </summary>
@@ -23,6 +18,15 @@ internal class Light
     public float Intensity;
 
     /// <summary>
+    /// Vrátí pozici světla ve světě.
+    /// </summary>
+    /// <returns>Pozice světla jako Vector4.</returns>
+    public Vector4 GetPositionWorld()
+    {
+        return new Vector4(GetPosition(), 1.0f);
+    }
+
+    /// <summary>
     /// Vytvoří bodové světlo.
     /// </summary>
     /// <param name="position">Pozice světla.</param>
@@ -32,7 +36,7 @@ internal class Light
     public static Light CreatePoint(Vector3 position, Vector3 color, float intensity)
     {
         Light light = new Light();
-        light.Position = new Vector4(position, 1.0f);
+        light.SetPosition(position);
         light.Color = color;
         light.Intensity = intensity;
         return light;
