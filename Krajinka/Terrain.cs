@@ -140,7 +140,6 @@ internal class Terrain : SceneObject
     /// Maximální Z souřadnice pohybu po terénu.
     /// </summary>
     public float MaxZ;
-
     /// <summary>
     /// Vytvoří terén z PNG mapy.
     /// </summary>
