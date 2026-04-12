@@ -7,9 +7,16 @@ out vec4 outColor;
 uniform vec4 lightPosWorld;
 uniform vec3 lightColor;
 uniform float lightIntensity;
+uniform int isSun;
 
 void main()
 {
+    if (isSun == 1)
+    {
+        outColor = vec4(vertexColor, 1.0);
+        return;
+    }
+
     vec3 normal = normalize(vNormal);
     vec3 lightDir = normalize(lightPosWorld.xyz - fragmentWorld);
 

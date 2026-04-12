@@ -44,6 +44,11 @@ public class Window : GameWindow
     private const byte RockObjectCode = 2;
 
     /// <summary>
+    /// Délka jednoho cyklu dne a noci v sekundách.
+    /// </summary>
+    private const float DayNightCycleDurationSeconds = 120.0f;
+
+    /// <summary>
     /// Seznam objektů aktuálně přidaných do scény.
     /// </summary>
     private readonly List<SceneObject> Objects = new List<SceneObject>();
@@ -124,6 +129,31 @@ public class Window : GameWindow
     private Model rockModel = null!;
 
     /// <summary>
+    /// Model slunce.
+    /// </summary>
+    private Model sunModel = null!;
+
+    /// <summary>
+    /// Střed kruhové dráhy slunce nad mapou.
+    /// </summary>
+    private Vector3 sunOrbitCenter;
+
+    /// <summary>
+    /// Poloměr kruhové dráhy slunce.
+    /// </summary>
+    private float sunOrbitRadius;
+
+    /// <summary>
+    /// Svislá amplituda dráhy slunce.
+    /// </summary>
+    private float sunOrbitVerticalAmplitude;
+
+    /// <summary>
+    /// Aktuální čas day/night cyklu.
+    /// </summary>
+    private float dayNightTime;
+
+    /// <summary>
     /// Vytvoří hlavní okno aplikace.
     /// </summary>
     /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
@@ -161,6 +191,7 @@ public class Window : GameWindow
             new Vector3(0.50f, 0.50f, 0.50f),
             Vector3.Zero);
 
+
         CreateObjects();
 
         float startX = 25.0f;
@@ -176,6 +207,27 @@ public class Window : GameWindow
         camera.Terrain = terrain;
 
         lightSun = Light.CreatePoint(new Vector3(200.0f, 350.0f, 150.0f), Vector3.One, 1.0f);
+
+        float mapCenterX = (terrain.MinX + terrain.MaxX) * 0.5f;
+        float mapCenterZ = (terrain.MinZ + terrain.MaxZ) * 0.5f;
+        float mapCenterY = terrain.GetHeightAt(mapCenterX, mapCenterZ);
+
+        sunOrbitCenter = new Vector3(mapCenterX, mapCenterY + 120.0f, mapCenterZ);
+
+        float mapWidth = terrain.MaxX - terrain.MinX;
+        float mapDepth = terrain.MaxZ - terrain.MinZ;
+        float largestMapSize = MathF.Max(mapWidth, mapDepth);
+
+        sunOrbitRadius = largestMapSize * 0.8f;
+        sunOrbitVerticalAmplitude = largestMapSize * 0.6f;
+
+        UpdateDayNightCycle(0.0f);
+
+        sunModel = new Model(
+            Path.Combine("Data", "models", "sun.obj"),
+            new Vector3(1.0f, 1.0f, 0.0f),
+            lightSun.GetPosition());
+        sunModel.SetScale(new Vector3(0.04f, 0.04f, 0.04f));
 
         CursorState = CursorState.Grabbed;
     }
@@ -272,12 +324,19 @@ public class Window : GameWindow
         shader.SetUniform("lightPosWorld", lightSun.GetPositionWorld());
         shader.SetUniform("lightColor", lightSun.Color);
         shader.SetUniform("lightIntensity", lightSun.Intensity);
+        shader.SetUniform("isSun", 0);
 
         foreach (SceneObject sceneObject in Objects)
         {
             shader.SetUniform("model", sceneObject.GetModelMatrix());
             sceneObject.Draw();
         }
+
+        sunModel.SetPosition(lightSun.GetPosition());
+        shader.SetUniform("model", sunModel.GetModelMatrix());
+        shader.SetUniform("isSun", 1);
+        sunModel.Draw();
+        shader.SetUniform("isSun", 0);
 
         foreach ((Vector3 Position, byte Type, float RotationY, float scale) model in objectInstances)
         {
@@ -428,12 +487,34 @@ public class Window : GameWindow
         }
 
         float dt = (float)e.Time;
+        UpdateDayNightCycle(dt);
         camera.Update(dt);
 
         for (int i = 0; i < Objects.Count; i++)
         {
             Objects[i].Update(dt);
         }
+    }
+
+    /// <summary>
+    /// Aktualizuje pozici světla a intenzitu pro day/night cyklus.
+    /// </summary>
+    /// <param name="dt">Doba od posledního snímku v sekundách.</param>
+    private void UpdateDayNightCycle(float dt)
+    {
+        dayNightTime += dt;
+
+        float cycleProgress = dayNightTime / DayNightCycleDurationSeconds;
+        float cycleAngle = cycleProgress * MathHelper.TwoPi;
+
+        float sunX = sunOrbitCenter.X + (MathF.Cos(cycleAngle) * sunOrbitRadius);
+        float sunZ = sunOrbitCenter.Z + (MathF.Sin(cycleAngle) * sunOrbitRadius);
+        float sunY = sunOrbitCenter.Y + (MathF.Sin(cycleAngle) * sunOrbitVerticalAmplitude);
+
+        lightSun.SetPosition(new Vector3(sunX, sunY, sunZ));
+
+        float dayFactor = (MathF.Sin(cycleAngle) + 1.0f) * 0.5f;
+        lightSun.Intensity = 0.1f + (dayFactor * 0.9f);
     }
 
     /// <summary>
@@ -465,6 +546,7 @@ public class Window : GameWindow
 
         treeModel.Dispose();
         rockModel.Dispose();
+        sunModel.Dispose();
     }
 
     /// <summary>
