@@ -14,6 +14,11 @@ internal class Camera : SceneObject
     private const float GroundSnapEpsilon = 0.08f;
 
     /// <summary>
+    /// Maximální povolená strmost při pohybu do kopce v radiánech.
+    /// </summary>
+    private const float UphillSlopeThreshold = 0.5f;
+
+    /// <summary>
     /// Směr, kterým kamera míří.
     /// </summary>
     public Vector3 Front;
@@ -147,7 +152,24 @@ internal class Camera : SceneObject
         {
             Vector3 normalizedDirection = Vector3.Normalize(MoveDirection);
             horizontalVelocity = normalizedDirection * MovementSpeed;
-            position += new Vector3(horizontalVelocity.X, 0.0f, horizontalVelocity.Z) * dt;
+
+            float targetX = position.X + (horizontalVelocity.X * dt);
+            float targetZ = position.Z + (horizontalVelocity.Z * dt);
+
+            bool canMoveHorizontally = true;
+            if (Terrain != null)
+            {
+                canMoveHorizontally = Terrain.CanMoveUphill(position.X, position.Z, targetX, targetZ, UphillSlopeThreshold);
+            }
+
+            if (canMoveHorizontally)
+            {
+                position = new Vector3(targetX, position.Y, targetZ);
+            }
+            else
+            {
+                horizontalVelocity = Vector3.Zero;
+            }
         }
 
         float clampedX = MathHelper.Clamp(position.X, MinX, MaxX);

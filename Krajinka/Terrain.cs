@@ -604,6 +604,39 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
+    /// Určí, zda je možné projít z jedné pozice do druhé při pohybu do kopce.
+    /// </summary>
+    /// <param name="fromX">Výchozí souřadnice X ve světě.</param>
+    /// <param name="fromZ">Výchozí souřadnice Z ve světě.</param>
+    /// <param name="toX">Cílová souřadnice X ve světě.</param>
+    /// <param name="toZ">Cílová souřadnice Z ve světě.</param>
+    /// <param name="uphillSlopeThreshold">Maximální povolená strmost při pohybu vzhůru (radiány).</param>
+    /// <returns>True pokud je průchod povolen, jinak false.</returns>
+    public bool CanMoveUphill(float fromX, float fromZ, float toX, float toZ, float uphillSlopeThreshold)
+    {
+        float fromHeight = GetHeightAt(fromX, fromZ);
+        float toHeight = GetHeightAt(toX, toZ);
+
+        if (toHeight <= fromHeight)
+        {
+            return true;
+        }
+
+        float clampedToX = MathHelper.Clamp(toX, MinX, MaxX);
+        float clampedToZ = MathHelper.Clamp(toZ, MinZ, MaxZ);
+
+        int gridX = (int)MathF.Round(clampedToX / SampleSpacing);
+        int gridZ = (int)MathF.Round(clampedToZ / SampleSpacing);
+
+        gridX = Math.Clamp(gridX, 0, width - 1);
+        gridZ = Math.Clamp(gridZ, 0, depth - 1);
+
+        float slopeAtTarget = CalculateSlopeAtGrid(gridX, gridZ);
+
+        return slopeAtTarget <= uphillSlopeThreshold;
+    }
+
+    /// <summary>
     /// Vrátí výšku terénu v dané světové souřadnici.
     /// </summary>
     /// <param name="x">Souřadnice X ve světě.</param>
