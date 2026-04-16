@@ -46,7 +46,7 @@ internal class Model : SceneObject
         SetPosition(position);
 
         string fullPath = Path.Combine(AppContext.BaseDirectory, objRelativePath);
-        (VertexColorNormal[] vertices, Triangle[] triangles) = ObjLoader.Load(fullPath, color);
+        (VertexNormalTexCoord[] vertices, Triangle[] triangles) = ObjLoader.Load(fullPath, color);
 
         indexCount = triangles.Length * 3;
         CreateModelBuffers(vertices, triangles);
@@ -57,14 +57,14 @@ internal class Model : SceneObject
     /// </summary>
     /// <param name="vertices">Vrcholová data.</param>
     /// <param name="triangles">Indexová data trojúhelníků.</param>
-    private void CreateModelBuffers(VertexColorNormal[] vertices, Triangle[] triangles)
+    private void CreateModelBuffers(VertexNormalTexCoord[] vertices, Triangle[] triangles)
     {
         VAO = GL.GenVertexArray();
         GL.BindVertexArray(VAO);
 
         VBO = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ArrayBuffer, VBO);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexColorNormal.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexNormalTexCoord.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
 
         IBO = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, IBO);
@@ -74,11 +74,13 @@ internal class Model : SceneObject
         GL.EnableVertexAttribArray(1);
         GL.EnableVertexAttribArray(2);
 
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), 0);
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), Vector3.SizeInBytes);
-        GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), 2 * Vector3.SizeInBytes);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), IntPtr.Zero);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), (IntPtr)Vector3.SizeInBytes);
+        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), 2 * (IntPtr)Vector3.SizeInBytes);
 
         GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
     }
 
     /// <summary>

@@ -3,12 +3,11 @@ using OpenTK.Mathematics;
 
 namespace Krajinka;
 
-
 /// <summary>
-/// Vrchol s pozicí, barvou a normálou.
+/// Vrchol s pozicí, normálou a UV souřadnicí.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public struct VertexColorNormal
+public struct VertexNormalTexCoord
 {
     /// <summary>
     /// Pozice vrcholu.
@@ -16,26 +15,26 @@ public struct VertexColorNormal
     public Vector3 Position;
 
     /// <summary>
-    /// Barva vrcholu.
-    /// </summary>
-    public Vector3 Color;
-
-    /// <summary>
     /// Normála vrcholu.
     /// </summary>
     public Vector3 Normal;
 
     /// <summary>
-    /// Vytvoří vrchol s pozicí, barvou a normálou.
+    /// UV souřadnice vrcholu.
+    /// </summary>
+    public Vector2 UV;
+
+    /// <summary>
+    /// Vytvoří vrchol s pozicí, normálou a UV souřadnicí.
     /// </summary>
     /// <param name="position">Pozice vrcholu.</param>
-    /// <param name="color">Barva vrcholu.</param>
     /// <param name="normal">Normála vrcholu.</param>
-    public VertexColorNormal(Vector3 position, Vector3 color, Vector3 normal)
+    /// <param name="uv">UV souřadnice.</param>
+    public VertexNormalTexCoord(Vector3 position, Vector3 normal, Vector2 uv)
     {
         Position = position;
-        Color = color;
         Normal = normal;
+        UV = uv;
     }
 
     /// <summary>
@@ -44,6 +43,6 @@ public struct VertexColorNormal
     /// <returns>Velikost v bajtech.</returns>
     public static int GetSizeInBytes()
     {
-        return Marshal.SizeOf<VertexColorNormal>();
+        return Marshal.SizeOf<VertexNormalTexCoord>();
     }
 }

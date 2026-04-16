@@ -46,27 +46,27 @@ public class Window : GameWindow
     /// <summary>
     /// Shader použitý pro vykreslení scény.
     /// </summary>
-    private Shader shader;
+    private Shader shader = null!;
 
     /// <summary>
     /// Informace o aktivním viewportu.
     /// </summary>
-    private Viewport viewport;
+    private Viewport viewport = null!;
 
     /// <summary>
     /// Kamera hráče.
     /// </summary>
-    private Camera camera;
+    private Camera camera = null!;
 
     /// <summary>
     /// Terén načtený z mapy.
     /// </summary>
-    private Terrain terrain;
+    private Terrain terrain = null!;
 
     /// <summary>
     /// Hlavní světlo scény.
     /// </summary>
-    private Light lightSun;
+    private Light lightSun = null!;
 
     /// <summary>
     /// Historie časů snímků pro výpočet FPS.
@@ -232,16 +232,40 @@ public class Window : GameWindow
         GL.Viewport(position.X, position.Y, size.X, size.Y);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         GL.Enable(EnableCap.DepthTest);
+        GL.Enable(EnableCap.CullFace);
+        GL.CullFace(TriangleFace.Back);
+        GL.FrontFace(FrontFaceDirection.Ccw);
 
         shader.Use();
         shader.SetUniform("projection", cameraState.GetProjectionMatrix(viewportState.GetAspectRatio()));
         shader.SetUniform("view", cameraState.GetViewMatrix());
-        shader.SetUniform("lightPosWorld", lightSun.Position);
+        shader.SetUniform("lightPosWorld", lightSun.GetPositionWorld());
         shader.SetUniform("lightColor", lightSun.Color);
         shader.SetUniform("lightIntensity", lightSun.Intensity);
+        shader.SetUniform("texWater", 0);
+        shader.SetUniform("texGrass", 1);
+        shader.SetUniform("texRock", 2);
+        shader.SetUniform("texMud", 3);
+        shader.SetUniform("surfaceTypeMap", 4);
+
 
         foreach (SceneObject sceneObject in Objects)
         {
+            if (sceneObject is Terrain terrainObject)
+            {
+                terrainObject.BindSurfaceTextures();
+
+                shader.SetUniform("useTexture", 1);
+
+                shader.SetUniform("isTerrain", 1);
+                shader.SetUniform("terrainMaxXZ", new Vector2(terrainObject.MaxX, terrainObject.MaxZ));
+            }
+            else
+            {
+                shader.SetUniform("useTexture", 1);
+                shader.SetUniform("isTerrain", 0);
+            }
+
             shader.SetUniform("model", sceneObject.GetModelMatrix());
             sceneObject.Draw();
         }

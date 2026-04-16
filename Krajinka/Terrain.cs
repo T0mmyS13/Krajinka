@@ -1,10 +1,37 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using SkiaSharp;
 
 namespace Krajinka;
+
+/// <summary>
+/// Typ povrchu terénu na základě sklonu a výšky.
+/// </summary>
+internal enum SurfaceType : byte
+{
+    /// <summary>
+    /// Voda (alfa kanál = 0 nebo nízká výška).
+    /// </summary>
+    Water = 0,
+
+    /// <summary>
+    /// Tráva (nízký sklon, střední výška, ne u vody).
+    /// </summary>
+    Grass = 2,
+
+    /// <summary>
+    /// Skála (vysoký sklon nebo vysoká výška).
+    /// </summary>
+    Rock = 3,
+
+    /// <summary>
+    /// Hlina (blízko vody).
+    /// </summary>
+    Mud = 1
+}
 
 /// <summary>
 /// Reprezentuje terén načtený z RGBA mapy.
@@ -32,24 +59,24 @@ internal class Terrain : SceneObject
     private const int MinimumTerrainDepth = 512;
 
     /// <summary>
-    /// Výška, od které se začíná přecházet z trávy do hlíny.
+    /// Poloměr hledání vody (ve vzorcích mřížky) pro určení hliny.
     /// </summary>
-    private const float GrassToDirtThreshold = 0.35f;
+    private const int MudWaterSearchRadius = 5;
 
     /// <summary>
-    /// Výška, od které se začíná přecházet z hlíny do skály.
+    /// Prahová výška pro určení povrchu jako voda.
     /// </summary>
-    private const float DirtToRockThreshold = 0.70f;
+    private const float WaterHeightThreshold = 1.0f;
 
     /// <summary>
-    /// Výška, od které se začíná přecházet ze skály do sněhu.
+    /// Prahová výška pro určení povrchu jako skála (vysoko).
     /// </summary>
-    private const float RockToSnowThreshold = 0.90f;
+    private const float RockHeightThreshold = 8.0f;
 
     /// <summary>
-    /// Minimální výškové rozpětí terénu pro výskyt sněhu.
+    /// Prahový sklon (v radiánech) pro určení povrchu jako skála.
     /// </summary>
-    private const float SnowHeightRangeThreshold = 60.0f;
+    private const float RockSlopeThreshold = 0.4f;
 
     /// <summary>
     /// Šířka mapy terénu ve vzorcích.
@@ -74,7 +101,7 @@ internal class Terrain : SceneObject
     /// <summary>
     /// Vrcholová data terénu.
     /// </summary>
-    private readonly VertexColorNormal[] vertices;
+    private readonly VertexNormalTexCoord[] vertices;
 
     /// <summary>
     /// Indexová data terénu.
@@ -102,9 +129,25 @@ internal class Terrain : SceneObject
     private bool disposed;
 
     /// <summary>
+    /// Textury pro jednotlivé typy povrchů.
+    /// </summary>
+    private readonly Dictionary<SurfaceType, Texture> surfaceTextures;
+
+    /// <summary>
+    /// ID textury mapy typů povrchů generované z logiky terénu.
+    /// </summary>
+    private readonly int surfaceTypeMapTextureId;
+
+
+    /// <summary>
     /// Výšky terénu v mřížce [x, z].
     /// </summary>
     public readonly float[,] Heights;
+
+    /// <summary>
+    /// Typy povrchů v mřížce [x, z].
+    /// </summary>
+    public readonly SurfaceType[,] SurfaceTypes;
 
     /// <summary>
     /// Kódy objektů z G kanálu mapy v mřížce [x, z].
@@ -147,6 +190,8 @@ internal class Terrain : SceneObject
     /// <param name="heightMapRelativePath">Relativní cesta k mapě.</param>
     public Terrain(string heightMapRelativePath)
     {
+        surfaceTextures = new Dictionary<SurfaceType, Texture>();
+
         LoadMapFromPng(
             heightMapRelativePath,
             out int loadedWidth,
@@ -168,6 +213,10 @@ internal class Terrain : SceneObject
         SetHeightRange();
         SetBounds();
 
+        SurfaceTypes = DetermineSurfaceTypes();
+        LoadSurfaceTextures();
+        surfaceTypeMapTextureId = CreateSurfaceTypeMapTexture();
+
         vertices = BuildMeshVertices();
         triangles = BuildMeshTriangles();
 
@@ -176,7 +225,7 @@ internal class Terrain : SceneObject
 
         VBO = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ArrayBuffer, VBO);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexColorNormal.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexNormalTexCoord.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
 
         IBO = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, IBO);
@@ -186,11 +235,71 @@ internal class Terrain : SceneObject
         GL.EnableVertexAttribArray(1);
         GL.EnableVertexAttribArray(2);
 
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), 0);
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), Vector3.SizeInBytes);
-        GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, VertexColorNormal.GetSizeInBytes(), 2 * Vector3.SizeInBytes);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), IntPtr.Zero);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), (IntPtr)Vector3.SizeInBytes);
+        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), 2 * (IntPtr)Vector3.SizeInBytes);
 
         GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
+    }
+
+    /// <summary>
+    /// Načte textury povrchů ze složky Textures podle názvů enum hodnot.
+    /// </summary>
+    private void LoadSurfaceTextures()
+    {
+        foreach (SurfaceType surfaceType in Enum.GetValues<SurfaceType>())
+        {
+            string fileName = surfaceType.ToString().ToLowerInvariant() + ".png";
+            string relativePath = Path.Combine("Data", "textures", fileName);
+            Texture texture = new Texture(relativePath, TextureSetting.Default);
+
+            surfaceTextures[surfaceType] = texture;
+        }
+    }
+
+    /// <summary>
+    /// Vytvoří texturu mapy typů povrchu přímo z hodnot SurfaceTypes.
+    /// </summary>
+    /// <returns>ID OpenGL textury.</returns>
+    private int CreateSurfaceTypeMapTexture()
+    {
+        byte[] data = new byte[width * depth * 4];
+        int index = 0;
+
+        for (int z = 0; z < depth; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                byte surfaceType = (byte)SurfaceTypes[x, z];
+                data[index++] = surfaceType;
+                data[index++] = 0;
+                data[index++] = 0;
+                data[index++] = 255;
+            }
+        }
+
+        int textureId = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, textureId);
+        GL.TexImage2D(
+            TextureTarget.Texture2D,
+            0,
+            PixelInternalFormat.Rgba,
+            width,
+            depth,
+            0,
+            PixelFormat.Rgba,
+            PixelType.UnsignedByte,
+            data);
+
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.BindTexture(TextureTarget.Texture2D, 0);
+
+        return textureId;
     }
 
     /// <summary>
@@ -246,6 +355,80 @@ internal class Terrain : SceneObject
         MaxX = (width - 1) * SampleSpacing;
         MinZ = 0f;
         MaxZ = (depth - 1) * SampleSpacing;
+    }
+
+    /// <summary>
+    /// Určí typ povrchu pro každou pozici na základě sklonu a výšky.
+    /// </summary>
+    /// <returns>Pole typů povrchů.</returns>
+    private SurfaceType[,] DetermineSurfaceTypes()
+    {
+        SurfaceType[,] result = new SurfaceType[width, depth];
+
+        for (int z = 0; z < depth; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float height = Heights[x, z];
+                byte alphaValue = AlphaValues[x, z];
+
+                if (alphaValue == 0 || height < WaterHeightThreshold)
+                {
+                    result[x, z] = SurfaceType.Water;
+                }
+                else if (height > RockHeightThreshold)
+                {
+                    result[x, z] = SurfaceType.Rock;
+                }
+                else
+                {
+                    float slope = CalculateSlopeAtGrid(x, z);
+
+                    if (slope > RockSlopeThreshold)
+                    {
+                        result[x, z] = SurfaceType.Rock;
+                    }
+                    else if (IsNearWater(x, z, MudWaterSearchRadius))
+                    {
+                        result[x, z] = SurfaceType.Mud;
+                    }
+                    else
+                    {
+                        result[x, z] = SurfaceType.Grass;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Vrátí true, pokud je pozice v mřížce blízko vody (alpha = 0).
+    /// </summary>
+    /// <param name="gridX">Souřadnice X v mřížce.</param>
+    /// <param name="gridZ">Souřadnice Z v mřížce.</param>
+    /// <param name="searchRadius">Poloměr hledání ve vzorcích mřížky.</param>
+    /// <returns>True pokud je v okolí voda, jinak false.</returns>
+    private bool IsNearWater(int gridX, int gridZ, int searchRadius)
+    {
+        int startX = Math.Max(0, gridX - searchRadius);
+        int endX = Math.Min(width - 1, gridX + searchRadius);
+        int startZ = Math.Max(0, gridZ - searchRadius);
+        int endZ = Math.Min(depth - 1, gridZ + searchRadius);
+
+        for (int z = startZ; z <= endZ; z++)
+        {
+            for (int x = startX; x <= endX; x++)
+            {
+                if (AlphaValues[x, z] == 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -313,9 +496,9 @@ internal class Terrain : SceneObject
     /// Vytvoří vrcholová data mesh terénu.
     /// </summary>
     /// <returns>Pole vrcholů terénu.</returns>
-    private VertexColorNormal[] BuildMeshVertices()
+    private VertexNormalTexCoord[] BuildMeshVertices()
     {
-        VertexColorNormal[] result = new VertexColorNormal[width * depth];
+        VertexNormalTexCoord[] result = new VertexNormalTexCoord[width * depth];
 
         for (int z = 0; z < depth; z++)
         {
@@ -326,10 +509,10 @@ internal class Terrain : SceneObject
                 float worldZ = z * SampleSpacing;
 
                 Vector3 normal = CalculateNormalAtGrid(x, z);
-                Vector3 color = GetHeightColor(worldY);
+                Vector2 uv = new Vector2(worldX * 0.08f, worldZ * 0.08f);
 
                 int index = ToVertexIndex(x, z);
-                result[index] = new VertexColorNormal(new Vector3(worldX, worldY, worldZ), color, normal);
+                result[index] = new VertexNormalTexCoord(new Vector3(worldX, worldY, worldZ), normal, uv);
             }
         }
 
@@ -374,89 +557,50 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
-    /// Vypočítá normálu vrcholu podle okolních výšek.
+    /// Vypočítá normálu vrcholu ze čtyř sousedních výšek (vlevo, vpravo, dole, nahoře).
     /// </summary>
     /// <param name="gridX">Souřadnice X v mřížce.</param>
     /// <param name="gridZ">Souřadnice Z v mřížce.</param>
-    /// <returns>Normálový vektor.</returns>
+    /// <returns>Znormalizovaný normálový vektor.</returns>
     private Vector3 CalculateNormalAtGrid(int gridX, int gridZ)
     {
-        int leftX = Math.Max(gridX - 1, 0);
-        int rightX = Math.Min(gridX + 1, width - 1);
-        int downZ = Math.Max(gridZ - 1, 0);
-        int upZ = Math.Min(gridZ + 1, depth - 1);
+        float s = SampleSpacing;
 
-        float distanceX = (rightX - leftX) * SampleSpacing;
-        float distanceZ = (upZ - downZ) * SampleSpacing;
+        float x = gridX * s;
+        float z = gridZ * s;
 
-        float heightChangePerX = 0.0f;
-        if (distanceX > 0.0f)
-        {
-            heightChangePerX = (Heights[rightX, gridZ] - Heights[leftX, gridZ]) / distanceX;
-        }
+        float heightLeft = GetHeightAt(x - s, z);
+        float heightRight = GetHeightAt(x + s, z);
+        float heightDown = GetHeightAt(x, z - s);
+        float heightUp = GetHeightAt(x, z + s);
 
-        float heightChangePerZ = 0.0f;
-        if (distanceZ > 0.0f)
-        {
-            heightChangePerZ = (Heights[gridX, upZ] - Heights[gridX, downZ]) / distanceZ;
-        }
+        Vector3 normal = new Vector3(heightLeft - heightRight, 2.0f * s, heightDown - heightUp);
 
-        Vector3 normal = new Vector3(-heightChangePerX, 1.0f, -heightChangePerZ);
         if (normal.LengthSquared > 0.0f)
         {
             normal = Vector3.Normalize(normal);
+        }
+        else
+        {
+            normal = Vector3.UnitY;
         }
 
         return normal;
     }
 
     /// <summary>
-    /// Převede výšku terénu na barvu od trávy přes hlínu a skálu až po sníh.
+    /// Vypočítá sklon terénu v dané pozici mřížky.
     /// </summary>
-    /// <param name="height">Výška vrcholu v jednotkách světa.</param>
-    /// <returns>Barva vrcholu terénu.</returns>
-    private Vector3 GetHeightColor(float height)
+    /// <param name="gridX">Souřadnice X v mřížce.</param>
+    /// <param name="gridZ">Souřadnice Z v mřížce.</param>
+    /// <returns>Sklon v radiánech.</returns>
+    private float CalculateSlopeAtGrid(int gridX, int gridZ)
     {
-        float normalizedHeight = 0.0f;
-        float heightRange = maxHeight - minHeight;
-        if (heightRange > 0.0f)
-        {
-            normalizedHeight = (height - minHeight) / heightRange;
-        }
+        Vector3 normal = CalculateNormalAtGrid(gridX, gridZ);
 
-        normalizedHeight = MathHelper.Clamp(normalizedHeight, 0.0f, 1.0f);
+        float slopeRadians = MathF.Acos(Math.Clamp(normal.Y, -1.0f, 1.0f));
 
-        Vector3 grassColor = new Vector3(0.14f, 0.42f, 0.14f);
-        Vector3 dirtColor = new Vector3(0.45f, 0.32f, 0.20f);
-        Vector3 rockColor = new Vector3(0.56f, 0.55f, 0.54f);
-        Vector3 snowColor = new Vector3(0.96f, 0.97f, 0.99f);
-
-        bool snowEnabled = heightRange >= SnowHeightRangeThreshold;
-
-        if (normalizedHeight < GrassToDirtThreshold)
-        {
-            float t = normalizedHeight / GrassToDirtThreshold;
-            return Vector3.Lerp(grassColor, dirtColor, t);
-        }
-
-        if (normalizedHeight < DirtToRockThreshold)
-        {
-            float t = (normalizedHeight - GrassToDirtThreshold) / (DirtToRockThreshold - GrassToDirtThreshold);
-            return Vector3.Lerp(dirtColor, rockColor, t);
-        }
-
-        if (!snowEnabled)
-        {
-            return rockColor;
-        }
-
-        if (normalizedHeight < RockToSnowThreshold)
-        {
-            float t = (normalizedHeight - DirtToRockThreshold) / (RockToSnowThreshold - DirtToRockThreshold);
-            return Vector3.Lerp(rockColor, snowColor, t);
-        }
-
-        return snowColor;
+        return slopeRadians;
     }
 
     /// <summary>
@@ -486,11 +630,10 @@ internal class Terrain : SceneObject
         float h01 = Heights[x0, z1];
         float h11 = Heights[x1, z1];
 
-        float row0Height = h00 + (h10 - h00) * blendX;
-        float row1Height = h01 + (h11 - h01) * blendX;
-        float finalHeight = row0Height + (row1Height - row0Height) * blendZ;
+        float row0Height = MathHelper.Lerp(h00, h10, blendX);
+        float row1Height = MathHelper.Lerp(h01, h11, blendX);
 
-        return finalHeight;
+        return MathHelper.Lerp(row0Height, row1Height, blendZ);
     }
 
     /// <summary>
@@ -513,9 +656,57 @@ internal class Terrain : SceneObject
             return;
         }
 
+        foreach (Texture texture in surfaceTextures.Values)
+        {
+            texture.Dispose();
+        }
+
+        GL.DeleteTexture(surfaceTypeMapTextureId);
+
         GL.DeleteBuffer(VBO);
         GL.DeleteBuffer(IBO);
         GL.DeleteVertexArray(VAO);
         disposed = true;
+    }
+
+    /// <summary>
+    /// Vrátí texturu pro daný typ povrchu.
+    /// </summary>
+    /// <param name="surfaceType">Typ povrchu.</param>
+    /// <returns>Textura povrchu.</returns>
+    public Texture GetSurfaceTexture(SurfaceType surfaceType)
+    {
+        if (surfaceTextures.TryGetValue(surfaceType, out Texture texture))
+        {
+            return texture;
+        }
+
+        throw new InvalidOperationException($"Textura pro povrch '{surfaceType}' nebyla načtena.");
+    }
+
+    /// <summary>
+    /// Připojí texturu daného povrchu na zadanou texturovou jednotku.
+    /// </summary>
+    /// <param name="surfaceType">Typ povrchu.</param>
+    /// <param name="unit">Texturová jednotka.</param>
+    /// <returns>True pokud textura byla připojena.</returns>
+    public void BindSurfaceTexture(SurfaceType surfaceType, int unit)
+    {
+        Texture texture = GetSurfaceTexture(surfaceType);
+        texture.Bind(unit);
+    }
+
+    /// <summary>
+    /// Připojí všechny dostupné textury povrchů na pevné texturové jednotky.
+    /// </summary>
+    /// <returns>True pokud byly textury připojeny.</returns>
+    public void BindSurfaceTextures()
+    {
+        BindSurfaceTexture(SurfaceType.Water, 0);
+        BindSurfaceTexture(SurfaceType.Grass, 1);
+        BindSurfaceTexture(SurfaceType.Rock, 2);
+        BindSurfaceTexture(SurfaceType.Mud, 3);
+        GL.ActiveTexture(TextureUnit.Texture4);
+        GL.BindTexture(TextureTarget.Texture2D, surfaceTypeMapTextureId);
     }
 }

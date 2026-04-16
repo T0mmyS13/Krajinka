@@ -77,6 +77,9 @@ public class Shader : IDisposable
             case Vector3 uniformVector3:
                 GL.Uniform3(location, uniformVector3);
                 break;
+            case Vector2 uniformVector2:
+                GL.Uniform2(location, uniformVector2);
+                break;
             case Vector4 uniformVector4:
                 GL.Uniform4(location, uniformVector4);
                 break;
