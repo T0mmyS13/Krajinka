@@ -39,6 +39,11 @@ public class Window : GameWindow
     private readonly List<SceneObject> Objects = new List<SceneObject>();
 
     /// <summary>
+    /// Seznam instancí objektů načtených z mapy (pozice, typ, rotace, měřítko).
+    /// </summary>
+    private readonly List<(Vector3 Position, byte Type, float RotationY, float Scale)> objectInstances = new List<(Vector3, byte, float, float)>();
+
+    /// <summary>
     /// Generátor náhodných čísel pro rotaci a měřítko objektů.
     /// </summary>
     private readonly Random random = new Random();
@@ -99,6 +104,26 @@ public class Window : GameWindow
     private readonly string selectedMapPath;
 
     /// <summary>
+    /// Kód objektu stromu v mapě.
+    /// </summary>
+    private const byte TreeObjectCode = 1;
+
+    /// <summary>
+    /// Kód objektu kamene v mapě.
+    /// </summary>
+    private const byte RockObjectCode = 2;
+
+    /// <summary>
+    /// Sdílený model stromu načtený jednou.
+    /// </summary>
+    private Model treeModel = null!;
+
+    /// <summary>
+    /// Sdílený model kamene načtený jednou.
+    /// </summary>
+    private Model rockModel = null!;
+
+    /// <summary>
     /// Vytvoří hlavní okno aplikace.
     /// </summary>
     /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
@@ -117,7 +142,6 @@ public class Window : GameWindow
     {
         base.OnLoad();
 
-
         viewport = new Viewport();
         viewport.ClientSize = Size;
 
@@ -125,6 +149,13 @@ public class Window : GameWindow
 
         terrain = new Terrain(selectedMapPath);
         Objects.Add(terrain);
+        treeModel = new Model(
+            Path.Combine("Data", "models", "tree", "Tree.obj"),
+            Vector3.Zero);
+
+        rockModel = new Model(
+            Path.Combine("Data", "models","rock", "Rock1.obj"),
+            Vector3.Zero);
 
         CreateObjects();
 
@@ -150,6 +181,8 @@ public class Window : GameWindow
     /// </summary>
     private void CreateObjects()
     {
+        objectInstances.Clear();
+
         int mapWidth = terrain.ObjectCodes.GetLength(0);
         int mapDepth = terrain.ObjectCodes.GetLength(1);
 
@@ -158,7 +191,7 @@ public class Window : GameWindow
             for (int x = 0; x < mapWidth; x++)
             {
                 byte objectCode = terrain.ObjectCodes[x, z];
-                if (objectCode != 1 && objectCode != 2)
+                if (objectCode != TreeObjectCode && objectCode != RockObjectCode)
                 {
                     continue;
                 }
@@ -167,33 +200,26 @@ public class Window : GameWindow
                 float worldY = terrain.Heights[x, z];
                 float worldZ = z * TerrainSampleSpacing;
 
-                if (objectCode == 1)
-                {
-                    Model tree = new Model(
-                        Path.Combine("Data","models", "tree.obj"),
-                        new Vector3(0.12f, 0.62f, 0.14f),
-                        new Vector3(worldX, worldY, worldZ));
+                float rotationY = GetRandomRotationY();
+                float scale;
 
-                    float treeScale = GetRandomScale(0.28f, 0.42f);
-                    tree.SetScale(new Vector3(treeScale, treeScale, treeScale));
-                    tree.SetRotation(new Vector3(0.0f, GetRandomRotationY(), 0.0f));
-                    Objects.Add(tree);
+                if (objectCode == TreeObjectCode)
+                {
+                    scale = GetRandomScale(0.8f, 1.2f);
                 }
                 else
                 {
-                    Model rock = new Model(
-                        Path.Combine("Data","models", "rock.obj"),
-                        new Vector3(0.50f, 0.50f, 0.50f),
-                        new Vector3(worldX, worldY, worldZ));
-
-                    float rockScale = GetRandomScale(0.50f, 0.80f);
-                    rock.SetScale(new Vector3(rockScale, rockScale, rockScale));
-                    rock.SetRotation(new Vector3(0.0f, GetRandomRotationY(), 0.0f));
-                    Objects.Add(rock);
+                    scale = GetRandomScale(0.50f, 0.80f);
                 }
+
+                objectInstances.Add((
+                    new Vector3(worldX, worldY, worldZ),
+                    objectCode,
+                    rotationY,
+                    scale));
             }
         }
-    }
+    }   
 
     /// <summary>
     /// Vrátí náhodné měřítko v daném rozsahu.
@@ -248,6 +274,29 @@ public class Window : GameWindow
         shader.SetUniform("texMud", 3);
         shader.SetUniform("surfaceTypeMap", 4);
 
+        shader.SetUniform("useTexture", 1);
+        shader.SetUniform("isTerrain", 0);
+
+        foreach ((Vector3 Position, byte Type, float RotationY, float Scale) model in objectInstances)
+        {
+            Model sharedModel;
+
+            if (model.Type == TreeObjectCode)
+            {
+                sharedModel = treeModel;
+            }
+            else
+            {
+                sharedModel = rockModel;
+            }
+
+            sharedModel.SetPosition(model.Position);
+            sharedModel.SetRotation(new Vector3(0.0f, model.RotationY, 0.0f));
+            sharedModel.SetScale(new Vector3(model.Scale, model.Scale, model.Scale));
+
+            shader.SetUniform("model", sharedModel.GetModelMatrix());
+            sharedModel.Draw();
+        }
 
         foreach (SceneObject sceneObject in Objects)
         {
@@ -427,6 +476,8 @@ public class Window : GameWindow
         base.OnUnload();
 
         shader.Dispose();
+        treeModel.Dispose();
+        rockModel.Dispose();
 
         foreach (SceneObject obj in Objects)
         {

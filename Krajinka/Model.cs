@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -11,24 +12,21 @@ namespace Krajinka;
 internal class Model : SceneObject
 {
     /// <summary>
-    /// Počet indexů použitých při vykreslení modelu.
+    /// Části modelu rozdělené podle textur.
     /// </summary>
-    private readonly int indexCount;
+    private readonly List<ModelPart> parts = new List<ModelPart>();
 
     /// <summary>
-    /// ID vertex array objektu.
+    /// Jedna vykreslovací část modelu.
     /// </summary>
-    private int VAO;
-
-    /// <summary>
-    /// ID vertex buffer objektu.
-    /// </summary>
-    private int VBO;
-
-    /// <summary>
-    /// ID index buffer objektu.
-    /// </summary>
-    private int IBO;
+    private struct ModelPart
+    {
+        public int VAO;
+        public int VBO;
+        public int IBO;
+        public int IndexCount;
+        public Texture Texture;
+    }
 
     /// <summary>
     /// Indikuje, zda byl model už uvolněn.
@@ -39,17 +37,26 @@ internal class Model : SceneObject
     /// Vytvoří objekt z OBJ souboru.
     /// </summary>
     /// <param name="objRelativePath">Relativní cesta k OBJ souboru.</param>
-    /// <param name="color">Výchozí barva objektu, pokud model nepoužívá MTL.</param>
     /// <param name="position">Pozice objektu ve scéně.</param>
-    public Model(string objRelativePath, Vector3 color, Vector3 position)
+    public Model(string objRelativePath, Vector3 position)
     {
         SetPosition(position);
 
         string fullPath = Path.Combine(AppContext.BaseDirectory, objRelativePath);
-        (VertexNormalTexCoord[] vertices, Triangle[] triangles) = ObjLoader.Load(fullPath, color);
+        ObjMeshData[] meshParts = ObjLoader.Load(fullPath);
 
-        indexCount = triangles.Length * 3;
-        CreateModelBuffers(vertices, triangles);
+        if (meshParts.Length == 0)
+        {
+            throw new InvalidOperationException("Model neobsahuje žádnou vykreslitelnou část s map_Kd texturou.");
+        }
+
+        for (int i = 0; i < meshParts.Length; i++)
+        {
+            ObjMeshData meshPart = meshParts[i];
+            Texture texture = new Texture(meshPart.TexturePath, TextureSetting.Default);
+            ModelPart part = CreateModelPart(meshPart.Vertices, meshPart.Triangles, texture);
+            parts.Add(part);
+        }
     }
 
     /// <summary>
@@ -57,17 +64,21 @@ internal class Model : SceneObject
     /// </summary>
     /// <param name="vertices">Vrcholová data.</param>
     /// <param name="triangles">Indexová data trojúhelníků.</param>
-    private void CreateModelBuffers(VertexNormalTexCoord[] vertices, Triangle[] triangles)
+    private ModelPart CreateModelPart(VertexNormalTexCoord[] vertices, Triangle[] triangles, Texture texture)
     {
-        VAO = GL.GenVertexArray();
-        GL.BindVertexArray(VAO);
+        ModelPart part = new ModelPart();
+        part.Texture = texture;
+        part.IndexCount = triangles.Length * 3;
 
-        VBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, VBO);
+        part.VAO = GL.GenVertexArray();
+        GL.BindVertexArray(part.VAO);
+
+        part.VBO = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ArrayBuffer, part.VBO);
         GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexNormalTexCoord.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
 
-        IBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, IBO);
+        part.IBO = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, part.IBO);
         GL.BufferData(BufferTarget.ElementArrayBuffer, triangles.Length * 3 * sizeof(int), triangles, BufferUsageHint.StaticDraw);
 
         GL.EnableVertexAttribArray(0);
@@ -81,6 +92,8 @@ internal class Model : SceneObject
         GL.BindVertexArray(0);
         GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
+
+        return part;
     }
 
     /// <summary>
@@ -88,8 +101,14 @@ internal class Model : SceneObject
     /// </summary>
     public override void Draw()
     {
-        GL.BindVertexArray(VAO);
-        GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+        for (int i = 0; i < parts.Count; i++)
+        {
+            ModelPart part = parts[i];
+            part.Texture.Bind(1);
+            GL.BindVertexArray(part.VAO);
+            GL.DrawElements(PrimitiveType.Triangles, part.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
+        }
+
         GL.BindVertexArray(0);
     }
 
@@ -103,9 +122,16 @@ internal class Model : SceneObject
             return;
         }
 
-        GL.DeleteBuffer(VBO);
-        GL.DeleteBuffer(IBO);
-        GL.DeleteVertexArray(VAO);
+        for (int i = 0; i < parts.Count; i++)
+        {
+            ModelPart part = parts[i];
+            GL.DeleteBuffer(part.VBO);
+            GL.DeleteBuffer(part.IBO);
+            GL.DeleteVertexArray(part.VAO);
+            part.Texture.Dispose();
+        }
+
+        parts.Clear();
         disposed = true;
     }
 }

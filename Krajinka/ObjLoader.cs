@@ -9,15 +9,45 @@ namespace Krajinka;
 /// <summary>
 /// Načítá OBJ soubor a vrací vrcholy a trojúhelníky.
 /// </summary>
+public struct ObjMeshData
+{
+    /// <summary>
+    /// Vrcholy části modelu.
+    /// </summary>
+    public VertexNormalTexCoord[] Vertices;
+
+    /// <summary>
+    /// Trojúhelníky části modelu.
+    /// </summary>
+    public Triangle[] Triangles;
+
+    /// <summary>
+    /// Absolutní cesta k textuře části modelu.
+    /// </summary>
+    public string TexturePath;
+
+    /// <summary>
+    /// Vytvoří data části modelu.
+    /// </summary>
+    public ObjMeshData(VertexNormalTexCoord[] vertices, Triangle[] triangles, string texturePath)
+    {
+        Vertices = vertices;
+        Triangles = triangles;
+        TexturePath = texturePath;
+    }
+}
+
+/// <summary>
+/// Načítá OBJ soubor a vrací části modelu podle materiálu.
+/// </summary>
 public static class ObjLoader
 {
     /// <summary>
     /// Načte OBJ soubor řádek po řádku.
     /// </summary>
     /// <param name="filename">Cesta k OBJ souboru.</param>
-    /// <param name="defaultColor">Nepoužito (zachováno kvůli kompatibilitě).</param>
-    /// <returns>Vrací pole vrcholů a pole trojúhelníků.</returns>
-    public static (VertexNormalTexCoord[] vertices, Triangle[] triangles) Load(string filename, Vector3 defaultColor)
+    /// <returns>Vrací části modelu rozdělené podle textury.</returns>
+    public static ObjMeshData[] Load(string filename)
     {
         if (!File.Exists(filename))
         {
@@ -26,10 +56,15 @@ public static class ObjLoader
 
         string[] lines = File.ReadAllLines(filename);
 
-        List<VertexNormalTexCoord> vertices = new List<VertexNormalTexCoord>();
-        List<Triangle> triangles = new List<Triangle>();
+        List<Vector3> positions = new List<Vector3>();
         List<Vector3> normals = new List<Vector3>();
         List<Vector2> texCoords = new List<Vector2>();
+        Dictionary<string, List<VertexNormalTexCoord>> verticesByTexture = new Dictionary<string, List<VertexNormalTexCoord>>(StringComparer.Ordinal);
+        Dictionary<string, List<Triangle>> trianglesByTexture = new Dictionary<string, List<Triangle>>(StringComparer.Ordinal);
+
+        string mtlFileName = string.Empty;
+        string currentMaterial = string.Empty;
+        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
@@ -42,7 +77,7 @@ public static class ObjLoader
 
             if (line.StartsWith("v ", StringComparison.Ordinal))
             {
-                ParseVertex(line, vertices);
+                ParseVertex(line, positions);
                 continue;
             }
 
@@ -60,21 +95,75 @@ public static class ObjLoader
 
             if (line.StartsWith("f ", StringComparison.Ordinal))
             {
-                ParseFace(line, vertices, normals, texCoords, triangles);
+                if (currentMaterial.Length == 0)
+                {
+                    continue;
+                }
+
+                if (!materialTextureMap.TryGetValue(currentMaterial, out string? texturePath))
+                {
+                    continue;
+                }
+
+                if (!verticesByTexture.TryGetValue(texturePath, out List<VertexNormalTexCoord>? partVertices))
+                {
+                    partVertices = new List<VertexNormalTexCoord>();
+                    verticesByTexture[texturePath] = partVertices;
+                }
+
+                if (!trianglesByTexture.TryGetValue(texturePath, out List<Triangle>? partTriangles))
+                {
+                    partTriangles = new List<Triangle>();
+                    trianglesByTexture[texturePath] = partTriangles;
+                }
+
+                ParseFace(line, positions, normals, texCoords, partVertices, partTriangles);
+                continue;
+            }
+
+            if (line.StartsWith("mtllib ", StringComparison.Ordinal))
+            {
+                mtlFileName = line.Substring(7).Trim();
+                string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
+                string mtlPath = Path.Combine(objDirectory, mtlFileName);
+                materialTextureMap = LoadMaterialTextureMap(mtlPath);
+                continue;
+            }
+
+            if (line.StartsWith("usemtl ", StringComparison.Ordinal))
+            {
+                currentMaterial = line.Substring(7).Trim();
             }
         }
 
-        NormalizeVertexNormals(vertices);
+        List<ObjMeshData> parts = new List<ObjMeshData>();
 
-        return (vertices.ToArray(), triangles.ToArray());
+        foreach (KeyValuePair<string, List<VertexNormalTexCoord>> part in verticesByTexture)
+        {
+            if (!trianglesByTexture.TryGetValue(part.Key, out List<Triangle>? partTriangles))
+            {
+                continue;
+            }
+
+            if (partTriangles.Count == 0)
+            {
+                continue;
+            }
+
+            string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
+            string texturePath = Path.GetFullPath(Path.Combine(objDirectory, part.Key));
+            parts.Add(new ObjMeshData(part.Value.ToArray(), partTriangles.ToArray(), texturePath));
+        }
+
+        return parts.ToArray();
     }
 
     /// <summary>
     /// Načte vrchol z řádku v.
     /// </summary>
     /// <param name="line">Řádek OBJ souboru.</param>
-    /// <param name="vertices">Seznam vrcholů.</param>
-    private static void ParseVertex(string line, List<VertexNormalTexCoord> vertices)
+    /// <param name="positions">Seznam pozic vrcholů.</param>
+    private static void ParseVertex(string line, List<Vector3> positions)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 4)
@@ -86,7 +175,7 @@ public static class ObjLoader
         float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
         float z = float.Parse(parts[3], CultureInfo.InvariantCulture);
 
-        vertices.Add(new VertexNormalTexCoord(new Vector3(x, y, z), Vector3.Zero, Vector2.Zero));
+        positions.Add(new Vector3(x, y, z));
     }
 
     /// <summary>
@@ -131,11 +220,18 @@ public static class ObjLoader
     /// Načte trojúhelník z řádku f.
     /// </summary>
     /// <param name="line">Řádek OBJ souboru.</param>
-    /// <param name="vertices">Seznam vrcholů.</param>
+    /// <param name="positions">Seznam pozic vrcholů.</param>
     /// <param name="normals">Seznam normál.</param>
     /// <param name="texCoords">Seznam UV souřadnic.</param>
+    /// <param name="vertices">Výstupní seznam vrcholů pro OpenGL.</param>
     /// <param name="triangles">Seznam trojúhelníků.</param>
-    private static void ParseFace(string line, List<VertexNormalTexCoord> vertices, List<Vector3> normals, List<Vector2> texCoords, List<Triangle> triangles)
+    private static void ParseFace(
+        string line,
+        List<Vector3> positions,
+        List<Vector3> normals,
+        List<Vector2> texCoords,
+        List<VertexNormalTexCoord> vertices,
+        List<Triangle> triangles)
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
@@ -144,37 +240,83 @@ public static class ObjLoader
             return;
         }
 
-        ParseFaceVertex(parts[1], out int i0, out int t0, out int n0);
-        i0 -= 1;
-
-        if (i0 < 0 || i0 >= vertices.Count)
+        int i0 = CreateVertexIndex(parts[1], positions, normals, texCoords, vertices);
+        if (i0 < 0)
         {
             return;
         }
 
         for (int i = 2; i + 1 < parts.Length; i++)
         {
-            ParseFaceVertex(parts[i], out int i1, out int t1, out int n1);
-            ParseFaceVertex(parts[i + 1], out int i2, out int t2, out int n2);
+            int i1 = CreateVertexIndex(parts[i], positions, normals, texCoords, vertices);
+            int i2 = CreateVertexIndex(parts[i + 1], positions, normals, texCoords, vertices);
 
-            i1 -= 1;
-            i2 -= 1;
-
-            if (i1 < 0 || i2 < 0 || i1 >= vertices.Count || i2 >= vertices.Count)
+            if (i1 < 0 || i2 < 0)
             {
                 continue;
             }
 
             triangles.Add(new Triangle(i0, i1, i2));
-
-            AddNormalToVertex(vertices, normals, i0, n0 - 1);
-            AddNormalToVertex(vertices, normals, i1, n1 - 1);
-            AddNormalToVertex(vertices, normals, i2, n2 - 1);
-
-            SetTexCoordToVertex(vertices, texCoords, i0, t0 - 1);
-            SetTexCoordToVertex(vertices, texCoords, i1, t1 - 1);
-            SetTexCoordToVertex(vertices, texCoords, i2, t2 - 1);
         }
+    }
+
+    /// <summary>
+    /// Vrátí index vrcholu ve výstupním seznamu, případně vrchol vytvoří.
+    /// </summary>
+    private static int CreateVertexIndex(
+        string token,
+        List<Vector3> positions,
+        List<Vector3> normals,
+        List<Vector2> texCoords,
+        List<VertexNormalTexCoord> vertices)
+    {
+        ParseFaceVertex(token, out int rawPositionIndex, out int rawTexCoordIndex, out int rawNormalIndex);
+
+        int positionIndex = ConvertObjIndex(rawPositionIndex, positions.Count);
+        int texCoordIndex = ConvertObjIndex(rawTexCoordIndex, texCoords.Count);
+        int normalIndex = ConvertObjIndex(rawNormalIndex, normals.Count);
+
+        if (positionIndex < 0 || positionIndex >= positions.Count)
+        {
+            return -1;
+        }
+
+        Vector3 position = positions[positionIndex];
+        Vector3 normal = Vector3.UnitY;
+        Vector2 uv = Vector2.Zero;
+
+        if (normalIndex >= 0 && normalIndex < normals.Count)
+        {
+            normal = normals[normalIndex];
+        }
+
+        if (texCoordIndex >= 0 && texCoordIndex < texCoords.Count)
+        {
+            uv = texCoords[texCoordIndex];
+        }
+
+        int newIndex = vertices.Count;
+        vertices.Add(new VertexNormalTexCoord(position, normal, uv));
+
+        return newIndex;
+    }
+
+    /// <summary>
+    /// Převede OBJ index na index do pole.
+    /// </summary>
+    private static int ConvertObjIndex(int objIndex, int count)
+    {
+        if (objIndex > 0)
+        {
+            return objIndex - 1;
+        }
+
+        if (objIndex < 0)
+        {
+            return count + objIndex;
+        }
+
+        return -1;
     }
 
     /// <summary>
@@ -209,63 +351,46 @@ public static class ObjLoader
     }
 
     /// <summary>
-    /// Přičte normálu do vrcholu.
+    /// Načte mapování materiál -> mapa_Kd z MTL souboru.
     /// </summary>
-    /// <param name="vertices">Seznam vrcholů.</param>
-    /// <param name="normals">Seznam normál.</param>
-    /// <param name="vertexIndex">Index vrcholu.</param>
-    /// <param name="normalIndex">Index normály.</param>
-    private static void AddNormalToVertex(List<VertexNormalTexCoord> vertices, List<Vector3> normals, int vertexIndex, int normalIndex)
+    /// <param name="mtlPath">Cesta k MTL souboru.</param>
+    /// <returns>Slovník mapování materiálu na texturu.</returns>
+    private static Dictionary<string, string> LoadMaterialTextureMap(string mtlPath)
     {
-        if (normalIndex < 0 || normalIndex >= normals.Count)
+        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (!File.Exists(mtlPath))
         {
-            return;
+            return materialTextureMap;
         }
 
-        VertexNormalTexCoord vertex = vertices[vertexIndex];
-        vertex.Normal += normals[normalIndex];
-        vertices[vertexIndex] = vertex;
-    }
+        string currentMaterial = string.Empty;
 
-    /// <summary>
-    /// Nastaví UV souřadnici vrcholu.
-    /// </summary>
-    /// <param name="vertices">Seznam vrcholů.</param>
-    /// <param name="vertexIndex">Index vrcholu.</param>
-    /// <param name="texCoords">Seznam UV souřadnic.</param>
-    /// <param name="texCoordIndex">Index UV souřadnice.</param>
-    private static void SetTexCoordToVertex(List<VertexNormalTexCoord> vertices, List<Vector2> texCoords, int vertexIndex, int texCoordIndex)
-    {
-        if (texCoordIndex < 0 || texCoordIndex >= texCoords.Count)
+        string[] mtlLines = File.ReadAllLines(mtlPath);
+        for (int lineIndex = 0; lineIndex < mtlLines.Length; lineIndex++)
         {
-            return;
-        }
-
-        VertexNormalTexCoord vertex = vertices[vertexIndex];
-        vertex.UV = texCoords[texCoordIndex];
-        vertices[vertexIndex] = vertex;
-    }
-
-    /// <summary>
-    /// Znormalizuje normály všech vrcholů.
-    /// </summary>
-    /// <param name="vertices">Seznam vrcholů.</param>
-    private static void NormalizeVertexNormals(List<VertexNormalTexCoord> vertices)
-    {
-        for (int i = 0; i < vertices.Count; i++)
-        {
-            VertexNormalTexCoord vertex = vertices[i];
-
-            if (vertex.Normal.LengthSquared > 0)
+            string line = mtlLines[lineIndex].Trim();
+            if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
             {
-                vertex.Normal = Vector3.Normalize(vertex.Normal);
-            }
-            else
-            {
-                vertex.Normal = Vector3.UnitY;
+                continue;
             }
 
-            vertices[i] = vertex;
+            if (line.StartsWith("newmtl ", StringComparison.Ordinal))
+            {
+                currentMaterial = line.Substring(7).Trim();
+                continue;
+            }
+
+            if (line.StartsWith("map_Kd ", StringComparison.Ordinal) && currentMaterial.Length > 0)
+            {
+                string textureFileName = line.Substring(7).Trim();
+                if (textureFileName.Length > 0)
+                {
+                    materialTextureMap[currentMaterial] = textureFileName;
+                }
+            }
         }
+
+        return materialTextureMap;
     }
 }

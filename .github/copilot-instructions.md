@@ -6,3 +6,4 @@
 - Uživatel je úplný začátečník a preferuje psát kód bez zkratek, jednoduše a explicitně, aby byl snadno pochopitelný. Uživatel chce jednoduchou, explicitní syntaxi bez pokročilých zkratek a nechce používat delegáty typu Func (např. HeightSampler).
 - Uživatel nechce v kódu používat vlastnosti s get/set a preferuje pole nebo metody bez getter/setter syntaxe.
 - Uživatel nechce v projektu používat fallback logiku (např. náhradní textury/cesty při chybě).
+- Uživatel preferuje co nejmenší zásahy do existujícího kódu a zachování původní struktury souborů při úpravách.
