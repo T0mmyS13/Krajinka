@@ -114,6 +114,21 @@ public class Window : GameWindow
     private const byte RockObjectCode = 2;
 
     /// <summary>
+    /// Kolizní poloměr hráče v rovině XZ.
+    /// </summary>
+    private const float CameraCollisionRadius = 0.35f;
+
+    /// <summary>
+    /// Základní kolizní poloměr stromu před aplikací měřítka instance.
+    /// </summary>
+    private const float TreeCollisionRadius = 0.55f;
+
+    /// <summary>
+    /// Základní kolizní poloměr kamene před aplikací měřítka instance.
+    /// </summary>
+    private const float RockCollisionRadius = 0.85f;
+
+    /// <summary>
     /// Sdílený model stromu načtený jednou.
     /// </summary>
     private Model treeModel = null!;
@@ -159,8 +174,8 @@ public class Window : GameWindow
 
         CreateObjects();
 
-        float startX = 25.0f;
-        float startZ = 25.0f;
+        float startX = 125.0f;
+        float startZ = 125.0f;
         float startY = terrain.GetHeightAt(startX, startZ) + EyeHeight;
 
         camera = new Camera(new Vector3(startX, startY, startZ));
@@ -241,6 +256,59 @@ public class Window : GameWindow
     {
         float degrees = (float)(random.NextDouble() * 360.0);
         return MathHelper.DegreesToRadians(degrees);
+    }
+
+    /// <summary>
+    /// Vrátí true, pokud plánovaný horizontální pohyb kamery narazí do stromu nebo kamene.
+    /// </summary>
+    /// <param name="currentPosition">Aktuální pozice kamery.</param>
+    /// <param name="moveDirection">Požadovaný směr pohybu.</param>
+    /// <param name="dt">Doba od posledního snímku v sekundách.</param>
+    /// <returns>True pokud je pohyb blokován kolizí objektu, jinak false.</returns>
+    private bool IsHorizontalMoveBlockedByObjects(Vector3 currentPosition, Vector3 moveDirection, float dt)
+    {
+        if (moveDirection.LengthSquared <= 0.0f)
+        {
+            return false;
+        }
+
+        Vector3 normalizedMoveDirection = Vector3.Normalize(moveDirection);
+        float targetX = currentPosition.X + (normalizedMoveDirection.X * camera.MovementSpeed * dt);
+        float targetZ = currentPosition.Z + (normalizedMoveDirection.Z * camera.MovementSpeed * dt);
+        Vector2 targetPosition = new Vector2(targetX, targetZ);
+
+        for (int i = 0; i < objectInstances.Count; i++)
+        {
+            (Vector3 position, byte type, float rotationY, float scale) = objectInstances[i];
+
+            float baseObjectRadius;
+            if (type == TreeObjectCode)
+            {
+                baseObjectRadius = TreeCollisionRadius;
+            }
+            else if (type == RockObjectCode)
+            {
+                baseObjectRadius = RockCollisionRadius;
+            }
+            else
+            {
+                continue;
+            }
+
+            float objectRadius = baseObjectRadius * scale;
+            float combinedRadius = objectRadius + CameraCollisionRadius;
+
+            Vector2 objectPosition = new Vector2(position.X, position.Z);
+            float distanceSquared = Vector2.DistanceSquared(targetPosition, objectPosition);
+            float combinedRadiusSquared = combinedRadius * combinedRadius;
+
+            if (distanceSquared < combinedRadiusSquared)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -417,6 +485,14 @@ public class Window : GameWindow
             moveDirection = Vector3.Normalize(moveDirection);
         }
 
+        float dt = (float)e.Time;
+        Vector3 currentCameraPosition = camera.GetPosition();
+
+        if (IsHorizontalMoveBlockedByObjects(currentCameraPosition, moveDirection, dt))
+        {
+            moveDirection = Vector3.Zero;
+        }
+
         camera.MoveDirection = moveDirection;
 
         MouseState mouse = MouseState;
@@ -446,7 +522,6 @@ public class Window : GameWindow
             }
         }
 
-        float dt = (float)e.Time;
         camera.Update(dt);
 
         for (int i = 0; i < Objects.Count; i++)
