@@ -69,6 +69,11 @@ internal class Terrain : SceneObject
     private const float WaterHeightThreshold = 1.0f;
 
     /// <summary>
+    /// Pevná výška hladiny vody pro rovný povrch jezera.
+    /// </summary>
+    private const float WaterSurfaceLevel = 1.08f;
+
+    /// <summary>
     /// Prahová výška pro určení povrchu jako skála (vysoko).
     /// </summary>
     private const float RockHeightThreshold = 8.0f;
@@ -122,6 +127,31 @@ internal class Terrain : SceneObject
     /// ID index buffer objektu terénu.
     /// </summary>
     private readonly int IBO;
+
+    /// <summary>
+    /// Vrcholová data samostatné hladiny vody.
+    /// </summary>
+    private readonly VertexNormalTexCoord[] waterVertices;
+
+    /// <summary>
+    /// Indexová data samostatné hladiny vody.
+    /// </summary>
+    private readonly Triangle[] waterTriangles;
+
+    /// <summary>
+    /// ID vertex array objektu hladiny vody.
+    /// </summary>
+    private readonly int waterVAO;
+
+    /// <summary>
+    /// ID vertex buffer objektu hladiny vody.
+    /// </summary>
+    private readonly int waterVBO;
+
+    /// <summary>
+    /// ID index buffer objektu hladiny vody.
+    /// </summary>
+    private readonly int waterIBO;
 
     /// <summary>
     /// Indikuje, zda byly prostředky terénu už uvolněny.
@@ -219,6 +249,8 @@ internal class Terrain : SceneObject
 
         vertices = BuildMeshVertices();
         triangles = BuildMeshTriangles();
+        waterVertices = BuildWaterVertices();
+        waterTriangles = BuildWaterTriangles();
 
         VAO = GL.GenVertexArray();
         GL.BindVertexArray(VAO);
@@ -230,6 +262,29 @@ internal class Terrain : SceneObject
         IBO = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, IBO);
         GL.BufferData(BufferTarget.ElementArrayBuffer, triangles.Length * 3 * sizeof(int), triangles, BufferUsageHint.StaticDraw);
+
+        GL.EnableVertexAttribArray(0);
+        GL.EnableVertexAttribArray(1);
+        GL.EnableVertexAttribArray(2);
+
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), IntPtr.Zero);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), (IntPtr)Vector3.SizeInBytes);
+        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), 2 * (IntPtr)Vector3.SizeInBytes);
+
+        GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
+
+        waterVAO = GL.GenVertexArray();
+        GL.BindVertexArray(waterVAO);
+
+        waterVBO = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ArrayBuffer, waterVBO);
+        GL.BufferData(BufferTarget.ArrayBuffer, waterVertices.Length * VertexNormalTexCoord.GetSizeInBytes(), waterVertices, BufferUsageHint.StaticDraw);
+
+        waterIBO = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, waterIBO);
+        GL.BufferData(BufferTarget.ElementArrayBuffer, waterTriangles.Length * 3 * sizeof(int), waterTriangles, BufferUsageHint.StaticDraw);
 
         GL.EnableVertexAttribArray(0);
         GL.EnableVertexAttribArray(1);
@@ -520,6 +575,59 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
+    /// Vytvoří vrcholová data rovné hladiny vody.
+    /// </summary>
+    /// <returns>Pole vrcholů hladiny vody.</returns>
+    private VertexNormalTexCoord[] BuildWaterVertices()
+    {
+        VertexNormalTexCoord[] result = new VertexNormalTexCoord[width * depth];
+
+        for (int z = 0; z < depth; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float worldX = x * SampleSpacing;
+                float worldZ = z * SampleSpacing;
+                Vector2 uv = new Vector2(worldX * 0.08f, worldZ * 0.08f);
+
+                int index = ToVertexIndex(x, z);
+                result[index] = new VertexNormalTexCoord(
+                    new Vector3(worldX, WaterSurfaceLevel, worldZ),
+                    Vector3.UnitY,
+                    uv);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Vytvoří indexová data trojúhelníků rovné hladiny vody přes celý terén.
+    /// </summary>
+    /// <returns>Pole trojúhelníků hladiny vody.</returns>
+    private Triangle[] BuildWaterTriangles()
+    {
+        Triangle[] result = new Triangle[(width - 1) * (depth - 1) * 2];
+        int index = 0;
+
+        for (int z = 0; z < depth - 1; z++)
+        {
+            for (int x = 0; x < width - 1; x++)
+            {
+                int i00 = ToVertexIndex(x, z);
+                int i10 = ToVertexIndex(x + 1, z);
+                int i01 = ToVertexIndex(x, z + 1);
+                int i11 = ToVertexIndex(x + 1, z + 1);
+
+                result[index++] = new Triangle(i00, i01, i10);
+                result[index++] = new Triangle(i10, i01, i11);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Vytvoří indexová data trojúhelníků terénu.
     /// </summary>
     /// <returns>Pole trojúhelníků.</returns>
@@ -680,6 +788,21 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
+    /// Vykreslí samostatnou rovnou hladinu vody.
+    /// </summary>
+    public void DrawWaterSurface()
+    {
+        if (waterTriangles.Length == 0)
+        {
+            return;
+        }
+
+        GL.BindVertexArray(waterVAO);
+        GL.DrawElements(PrimitiveType.Triangles, waterTriangles.Length * 3, DrawElementsType.UnsignedInt, IntPtr.Zero);
+        GL.BindVertexArray(0);
+    }
+
+    /// <summary>
     /// Uvolní grafické prostředky terénu.
     /// </summary>
     public override void Dispose()
@@ -699,6 +822,10 @@ internal class Terrain : SceneObject
         GL.DeleteBuffer(VBO);
         GL.DeleteBuffer(IBO);
         GL.DeleteVertexArray(VAO);
+
+        GL.DeleteBuffer(waterVBO);
+        GL.DeleteBuffer(waterIBO);
+        GL.DeleteVertexArray(waterVAO);
         disposed = true;
     }
 

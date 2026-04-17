@@ -37,11 +37,8 @@ internal class Model : SceneObject
     /// Vytvoří objekt z OBJ souboru.
     /// </summary>
     /// <param name="objRelativePath">Relativní cesta k OBJ souboru.</param>
-    /// <param name="position">Pozice objektu ve scéně.</param>
-    public Model(string objRelativePath, Vector3 position)
+    public Model(string objRelativePath)
     {
-        SetPosition(position);
-
         string fullPath = Path.Combine(AppContext.BaseDirectory, objRelativePath);
         ObjMeshData[] meshParts = ObjLoader.Load(fullPath);
 

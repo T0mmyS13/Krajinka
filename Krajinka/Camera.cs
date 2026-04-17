@@ -84,6 +84,12 @@ internal class Camera : SceneObject
     public Terrain? Terrain;
 
     /// <summary>
+    /// Volitelná výška podlahy pro objekty nad terénem (např. vrchol kamene) včetně EyeHeight.
+    /// Pokud je menší nebo rovna nule, používá se pouze výška terénu.
+    /// </summary>
+    public float ExtraGroundY;
+
+    /// <summary>
     /// Počáteční rychlost výskoku.
     /// </summary>
     public float JumpSpeed = 3.7f;
@@ -179,6 +185,11 @@ internal class Camera : SceneObject
         if (Terrain != null)
         {
             groundY = Terrain.GetHeightAt(clampedX, clampedZ) + EyeHeight;
+        }
+
+        if (ExtraGroundY > groundY)
+        {
+            groundY = ExtraGroundY;
         }
 
         bool nearGround = position.Y <= groundY + GroundSnapEpsilon;
