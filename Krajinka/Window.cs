@@ -44,34 +44,19 @@ public class Window : GameWindow
     private readonly List<ObjectInstance> objectInstances = new List<ObjectInstance>();
 
     /// <summary>
-    /// Jedna instance objektu ve scéně.
+    /// Seznam náhodně umístěných květin.
     /// </summary>
-    private struct ObjectInstance
-    {
-        public Vector3 Position;
-        public byte Type;
-        public float RotationY;
-        public float Scale;
-        public ObjectHitbox Hitbox;
-    }
-
-    /// <summary>
-    /// Předpočítaný hitbox objektu po aplikaci měřítka.
-    /// </summary>
-    private struct ObjectHitbox
-    {
-        public float Radius;
-        public float MinX;
-        public float MaxX;
-        public float MinZ;
-        public float MaxZ;
-        public float TopY;
-    }
+    private readonly List<FlowerInstance> flowerInstances = new List<FlowerInstance>();
 
     /// <summary>
     /// Generátor náhodných čísel pro rotaci a měřítko objektů.
     /// </summary>
     private readonly Random random = new Random();
+
+    /// <summary>
+    /// Kolizní systém pro hitboxy a detekci kolizí.
+    /// </summary>
+    private CollisionSystem collisionSystem = null!;
 
     /// <summary>
     /// Shader použitý pro vykreslení scény.
@@ -149,6 +134,16 @@ public class Window : GameWindow
     private const byte BushObjectCode = 3;
 
     /// <summary>
+    /// Kód objektu květin použitý při náhradě stromu na skále.
+    /// </summary>
+    private const byte FlowerObjectCode = 4;
+
+    /// <summary>
+    /// Počet květin, které se do scény umístí náhodně.
+    /// </summary>
+    private const int FlowerCount = 60;
+
+    /// <summary>
     /// Kolizní poloměr hráče v rovině XZ.
     /// </summary>
     private const float CameraCollisionRadius = 0.35f;
@@ -156,7 +151,7 @@ public class Window : GameWindow
     /// <summary>
     /// Základní radius hitboxu stromu.
     /// </summary>
-    private const float TreeHitboxRadius = 0.55f;
+    private const float TreeHitboxRadius = 0.45f;
 
     /// <summary>
     /// Základní radius hitboxu kamene.
@@ -166,7 +161,12 @@ public class Window : GameWindow
     /// <summary>
     /// Základní radius hitboxu keře.
     /// </summary>
-    private const float BushHitboxRadius = 0.95f;
+    private const float BushHitboxRadius = 0.6f;
+
+    /// <summary>
+    /// Základní radius hitboxu květiny.
+    /// </summary>
+    private const float FlowerHitboxRadius = 0.25f;
 
     /// <summary>
     /// Výška hitboxu stromu.
@@ -176,12 +176,17 @@ public class Window : GameWindow
     /// <summary>
     /// Výška hitboxu kamene.
     /// </summary>
-    private const float RockHitboxHeight = 1.6f;
+    private const float RockHitboxHeight = 0.6f;
 
     /// <summary>
     /// Výška hitboxu keře.
     /// </summary>
-    private const float BushHitboxHeight = 0.4f;
+    private const float BushHitboxHeight = 0.3f;
+
+    /// <summary>
+    /// Výška hitboxu květiny.
+    /// </summary>
+    private const float FlowerHitboxHeight = 0.2f;
 
     /// <summary>
     /// Sdílený model stromu načtený jednou.
@@ -197,6 +202,21 @@ public class Window : GameWindow
     /// Sdílený model keře načtený jednou.
     /// </summary>
     private Model bushModel = null!;
+
+    /// <summary>
+    /// Sdílený model růže načtený jednou.
+    /// </summary>
+    private Model roseModel = null!;
+
+    /// <summary>
+    /// Sdílený model tulipánu načtený jednou.
+    /// </summary>
+    private Model tulipModel = null!;
+
+    /// <summary>
+    /// Pole sdílených modelů květin pro náhodný výběr při generování květin.
+    /// </summary>
+    private Model[] flowers = null!;
 
     /// <summary>
     /// Vytvoří hlavní okno aplikace.
@@ -223,6 +243,21 @@ public class Window : GameWindow
         shader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "basic.frag"));
         waterShader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "water.frag"));
 
+        collisionSystem = new CollisionSystem(
+            TreeObjectCode,
+            RockObjectCode,
+            BushObjectCode,
+            FlowerObjectCode,
+            CameraCollisionRadius,
+            TreeHitboxRadius,
+            RockHitboxRadius,
+            BushHitboxRadius,
+            FlowerHitboxRadius,
+            TreeHitboxHeight,
+            RockHitboxHeight,
+            BushHitboxHeight,
+            FlowerHitboxHeight);
+
         terrain = new Terrain(selectedMapPath);
         Objects.Add(terrain);
         treeModel = new Model(Path.Combine("Data", "models", "tree", "Tree.obj"));
@@ -231,7 +266,16 @@ public class Window : GameWindow
 
         bushModel = new Model(Path.Combine("Data", "models", "bush", "bush.obj"));
 
+        roseModel = new Model(Path.Combine("Data", "models", "rose", "plant.obj"));
+
+        tulipModel = new Model(Path.Combine("Data", "models", "tulip", "Roses Orange.obj"));
+
+        flowers = new Model[] { roseModel, tulipModel };
+
+
+
         CreateObjects();
+        CreateFlowers();
 
         float startX = 125.0f;
         float startZ = 125.0f;
@@ -289,21 +333,7 @@ public class Window : GameWindow
                 float worldZ = z * TerrainSampleSpacing;
 
                 float rotationY = GetRandomRotationY();
-                float scale;
-
-                if (objectCode == TreeObjectCode)
-                {
-                    scale = GetRandomScale(0.8f, 1.2f);
-                }
-                else if (objectCode == BushObjectCode)
-                {
-                    scale = GetRandomScale(0.0005f, 0.0007f);
-                }
-                else
-                {
-                    scale = GetRandomScale(0.50f, 0.80f);
-                }
-
+                float scale = GetScale(objectCode);
                 Vector3 objectPosition = new Vector3(worldX, worldY, worldZ);
 
                 objectInstances.Add(
@@ -313,11 +343,63 @@ public class Window : GameWindow
                         Type = objectCode,
                         RotationY = rotationY,
                         Scale = scale,
-                        Hitbox = CreateHitbox(objectCode, objectPosition)
+                        Hitbox = collisionSystem.CreateHitbox(objectCode, objectPosition)
                     });
             }
         }
     }   
+
+    /// <summary>
+    /// Vytvoří náhodně rozmístěné květiny na volných místech terénu.
+    /// </summary>
+    private void CreateFlowers()
+    {
+        flowerInstances.Clear();
+
+        int mapWidth = terrain.ObjectCodes.GetLength(0);
+        int mapDepth = terrain.ObjectCodes.GetLength(1);
+        int attempts = 0;
+        int maxAttempts = FlowerCount * 50;
+
+        while (flowerInstances.Count < FlowerCount && attempts < maxAttempts)
+        {
+            attempts++;
+
+            int x = random.Next(mapWidth);
+            int z = random.Next(mapDepth);
+            SurfaceType surfaceType = terrain.SurfaceTypes[x, z];
+
+            if (surfaceType == SurfaceType.Water || surfaceType == SurfaceType.Rock)
+            {
+                continue;
+            }
+
+            float worldX = x * TerrainSampleSpacing;
+            float worldY = terrain.Heights[x, z];
+            float worldZ = z * TerrainSampleSpacing;
+
+            int modelIndex = random.Next(flowers.Length);
+            float scale = GetScale(FlowerObjectCode, modelIndex);
+
+            Vector3 flowerPosition = new Vector3(worldX, worldY, worldZ);
+            ObjectHitbox flowerHitbox = collisionSystem.CreateHitbox(FlowerObjectCode, flowerPosition);
+
+            if (!collisionSystem.IsPlacementFree(flowerHitbox, objectInstances, flowerInstances))
+            {
+                continue;
+            }
+
+            flowerInstances.Add(
+                new FlowerInstance
+                {
+                    Position = flowerPosition,
+                    RotationY = GetRandomRotationY(),
+                    Scale = scale,
+                    ModelIndex = modelIndex,
+                    Hitbox = flowerHitbox
+                });
+        }
+    }
 
     /// <summary>
     /// Vrátí náhodné měřítko v daném rozsahu.
@@ -339,137 +421,6 @@ public class Window : GameWindow
     {
         float degrees = (float)(random.NextDouble() * 360.0);
         return MathHelper.DegreesToRadians(degrees);
-    }
-
-    /// <summary>
-    /// Vytvoří hitbox objektu a předpočítá jeho rozměry po aplikaci měřítka.
-    /// </summary>
-    /// <param name="objectType">Typ objektu.</param>
-    /// <param name="position">Pozice instance ve světě.</param>
-    /// <returns>Předpočítaný hitbox.</returns>
-    private ObjectHitbox CreateHitbox(byte objectType, Vector3 position)
-    {
-        ObjectHitbox hitbox = new ObjectHitbox();
-
-        if (objectType == TreeObjectCode)
-        {
-            hitbox.Radius = TreeHitboxRadius;
-            hitbox.TopY = position.Y + TreeHitboxHeight;
-        }
-        else if (objectType == BushObjectCode)
-        {
-            hitbox.Radius = BushHitboxRadius;
-            hitbox.TopY = position.Y + BushHitboxHeight;
-        }
-        else
-        {
-            hitbox.Radius = RockHitboxRadius;
-            hitbox.TopY = position.Y + RockHitboxHeight;
-        }
-
-        hitbox.MinX = position.X - hitbox.Radius;
-        hitbox.MaxX = position.X + hitbox.Radius;
-        hitbox.MinZ = position.Z - hitbox.Radius;
-        hitbox.MaxZ = position.Z + hitbox.Radius;
-
-        return hitbox;
-    }
-
-    /// <summary>
-    /// Vrátí true, pokud plánovaný horizontální pohyb kamery narazí do objektu.
-    /// Všechny objekty používají jednotný krabicový hitbox; na vršek se dá vstoupit jen u kamene.
-    /// </summary>
-    /// <param name="currentPosition">Aktuální pozice kamery.</param>
-    /// <param name="moveDirection">Požadovaný směr pohybu.</param>
-    /// <param name="dt">Doba od posledního snímku v sekundách.</param>
-    /// <returns>True pokud je pohyb blokován kolizí objektu, jinak false.</returns>
-    private bool IsColliding(Vector3 currentPosition, Vector3 moveDirection, float dt)
-    {
-        if (moveDirection.LengthSquared <= 0.0f)
-        {
-            return false;
-        }
-
-        Vector3 normalizedMoveDirection = Vector3.Normalize(moveDirection);
-        float targetX = currentPosition.X + (normalizedMoveDirection.X * camera.MovementSpeed * dt);
-        float targetZ = currentPosition.Z + (normalizedMoveDirection.Z * camera.MovementSpeed * dt);
-        Vector2 targetPosition = new Vector2(targetX, targetZ);
-        float cameraFeetY = currentPosition.Y - camera.EyeHeight;
-
-        for (int i = 0; i < objectInstances.Count; i++)
-        {
-            ObjectInstance instance = objectInstances[i];
-            byte type = instance.Type;
-            ObjectHitbox hitbox = instance.Hitbox;
-
-            bool intersectsObjectBoxXZ =
-                targetPosition.X >= hitbox.MinX - CameraCollisionRadius &&
-                targetPosition.X <= hitbox.MaxX + CameraCollisionRadius &&
-                targetPosition.Y >= hitbox.MinZ - CameraCollisionRadius &&
-                targetPosition.Y <= hitbox.MaxZ + CameraCollisionRadius;
-
-            if (!intersectsObjectBoxXZ)
-            {
-                continue;
-            }
-
-            bool canStepOnObjectTop = type == RockObjectCode && cameraFeetY >= hitbox.TopY;
-            if (canStepOnObjectTop)
-            {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Vrátí výšku podlahy kamery pro vršek kamene včetně EyeHeight.
-    /// Pokud kamera nestojí nad vrškem kamene, vrací 0.
-    /// </summary>
-    /// <param name="cameraPosition">Pozice kamery po pohybu v aktuálním snímku.</param>
-    /// <returns>Výška podlahy kamery včetně EyeHeight, nebo 0.</returns>
-    private float GetRockTopGroundY(Vector3 cameraPosition)
-    {
-        float bestGroundY = 0.0f;
-        float cameraFeetY = cameraPosition.Y - camera.EyeHeight;
-
-        for (int i = 0; i < objectInstances.Count; i++)
-        {
-            ObjectInstance instance = objectInstances[i];
-            if (instance.Type != RockObjectCode)
-            {
-                continue;
-            }
-
-            ObjectHitbox hitbox = instance.Hitbox;
-
-            bool isInsideRockTopXZ =
-                cameraPosition.X >= hitbox.MinX &&
-                cameraPosition.X <= hitbox.MaxX &&
-                cameraPosition.Z >= hitbox.MinZ &&
-                cameraPosition.Z <= hitbox.MaxZ;
-
-            if (!isInsideRockTopXZ)
-            {
-                continue;
-            }
-
-            if (cameraFeetY < hitbox.TopY)
-            {
-                continue;
-            }
-
-            float candidateGroundY = hitbox.TopY + camera.EyeHeight;
-            if (candidateGroundY > bestGroundY)
-            {
-                bestGroundY = candidateGroundY;
-            }
-        }
-
-        return bestGroundY;
     }
 
     /// <summary>
@@ -507,27 +458,21 @@ public class Window : GameWindow
 
         foreach (ObjectInstance model in objectInstances)
         {
-            Model sharedModel;
+            Model sharedModel = GetModelForObjectType(model.Type);
 
-            if (model.Type == TreeObjectCode)
-            {
-                sharedModel = treeModel;
-            }
-            else if (model.Type == BushObjectCode)
-            {
-                sharedModel = bushModel;
-            }
-            else
-            {
-                sharedModel = rockModel;
-            }
-
-            sharedModel.SetPosition(model.Position);
-            sharedModel.SetRotation(new Vector3(0.0f, model.RotationY, 0.0f));
-            sharedModel.SetScale(new Vector3(model.Scale, model.Scale, model.Scale));
+            ApplyModelTransform(sharedModel, model.Position, model.RotationY, model.Scale);
 
             shader.SetUniform("model", sharedModel.GetModelMatrix());
             sharedModel.Draw();
+        }
+
+        foreach (FlowerInstance flower in flowerInstances)
+        {
+            Model flowerModel = flowers[flower.ModelIndex];
+            ApplyModelTransform(flowerModel, flower.Position, flower.RotationY, flower.Scale);
+
+            shader.SetUniform("model", flowerModel.GetModelMatrix());
+            flowerModel.Draw();
         }
 
         foreach (SceneObject sceneObject in Objects)
@@ -650,53 +595,55 @@ public class Window : GameWindow
             moveRight = Vector3.Normalize(moveRight);
         }
 
-        Vector3 moveDirection = Vector3.Zero;
+        Vector3 moveDirection;
 
-        if (keyboard.IsKeyDown(Keys.W))
+        if (camera.IsGrounded)
         {
-            moveDirection += moveForward;
+            moveDirection = Vector3.Zero;
+
+            if (keyboard.IsKeyDown(Keys.W))
+            {
+                moveDirection += moveForward;
+            }
+
+            if (keyboard.IsKeyDown(Keys.S))
+            {
+                moveDirection -= moveForward;
+            }
+
+            if (keyboard.IsKeyDown(Keys.A))
+            {
+                moveDirection -= moveRight;
+            }
+
+            if (keyboard.IsKeyDown(Keys.D))
+            {
+                moveDirection += moveRight;
+            }
+
+            if (moveDirection.LengthSquared > 0)
+            {
+                moveDirection = Vector3.Normalize(moveDirection);
+            }
         }
-
-        if (keyboard.IsKeyDown(Keys.S))
+        else
         {
-            moveDirection -= moveForward;
-        }
-
-        if (keyboard.IsKeyDown(Keys.A))
-        {
-            moveDirection -= moveRight;
-        }
-
-        if (keyboard.IsKeyDown(Keys.D))
-        {
-            moveDirection += moveRight;
-        }
-
-        if (moveDirection.LengthSquared > 0)
-        {
-            moveDirection = Vector3.Normalize(moveDirection);
+            moveDirection = camera.MoveDirection;
         }
 
         float dt = (float)e.Time;
         Vector3 currentCameraPosition = camera.GetPosition();
 
-        if (IsColliding(currentCameraPosition, moveDirection, dt))
+        if (collisionSystem.IsColliding(currentCameraPosition, moveDirection, dt, camera.MovementSpeed, camera.EyeHeight, objectInstances))
         {
             moveDirection = Vector3.Zero;
         }
 
         camera.MoveDirection = moveDirection;
 
-        Vector3 predictedCameraPosition = currentCameraPosition;
-        if (moveDirection.LengthSquared > 0.0f)
-        {
-            Vector3 normalizedMoveDirection = Vector3.Normalize(moveDirection);
-            float predictedX = currentCameraPosition.X + (normalizedMoveDirection.X * camera.MovementSpeed * dt);
-            float predictedZ = currentCameraPosition.Z + (normalizedMoveDirection.Z * camera.MovementSpeed * dt);
-            predictedCameraPosition = new Vector3(predictedX, currentCameraPosition.Y, predictedZ);
-        }
+        Vector3 predictedCameraPosition = collisionSystem.GetPredictedCameraPosition(currentCameraPosition, moveDirection, dt, camera.MovementSpeed);
 
-        camera.ExtraGroundY = GetRockTopGroundY(predictedCameraPosition);
+        camera.ExtraGroundY = collisionSystem.GetRockTopGroundY(predictedCameraPosition, camera.EyeHeight, objectInstances);
 
         MouseState mouse = MouseState;
         if (firstMove || mouseResetFrames > 0)
@@ -758,6 +705,11 @@ public class Window : GameWindow
         treeModel.Dispose();
         rockModel.Dispose();
         bushModel.Dispose();
+        
+        foreach (Model flower in flowers)
+        {
+            flower.Dispose();
+        }
 
         foreach (SceneObject obj in Objects)
         {
@@ -783,5 +735,81 @@ public class Window : GameWindow
 
         firstMove = true;
         mouseResetFrames = MouseFSResetFrames;
+    }
+
+    /// <summary>
+    /// Vrátí náhodné měřítko podle typu objektu.
+    /// Pro květinu (kód 4) používá i index modelu.
+    /// </summary>
+    /// <param name="objectCode">Kód objektu mapy.</param>
+    /// <param name="flowerModelIndex">Index modelu květiny, jinak null.</param>
+    /// <returns>Náhodné měřítko objektu.</returns>
+    private float GetScale(byte objectCode, int? flowerModelIndex = null)
+    {
+        if (objectCode == TreeObjectCode)
+        {
+            return GetRandomScale(0.8f, 1.2f);
+        }
+
+        if (objectCode == BushObjectCode)
+        {
+            return GetRandomScale(0.0005f, 0.0007f);
+        }
+
+        if (objectCode == RockObjectCode)
+        {
+            return GetRandomScale(0.30f, 0.50f);
+        }
+
+        if (objectCode == FlowerObjectCode)
+        {
+            if (!flowerModelIndex.HasValue)
+            {
+                throw new InvalidOperationException("Pro FlowerObjectCode je nutné předat flowerModelIndex.");
+            }
+
+            if (flowerModelIndex.Value == 0)
+            {
+                return GetRandomScale(0.3f, 0.5f);
+            }
+
+            return GetRandomScale(0.005f, 0.01f);
+        }
+
+        throw new InvalidOperationException("Neznámý object code pro výpočet scale.");
+    }
+
+    /// <summary>
+    /// Vrátí sdílený model podle typu objektu.
+    /// </summary>
+    /// <param name="objectType">Typ objektu.</param>
+    /// <returns>Model použitý pro vykreslení.</returns>
+    private Model GetModelForObjectType(byte objectType)
+    {
+        if (objectType == TreeObjectCode)
+        {
+            return treeModel;
+        }
+
+        if (objectType == BushObjectCode)
+        {
+            return bushModel;
+        }
+
+        return rockModel;
+    }
+
+    /// <summary>
+    /// Aplikuje pozici, rotaci a měřítko na model před vykreslením.
+    /// </summary>
+    /// <param name="model">Upravovaný model.</param>
+    /// <param name="position">Pozice ve světě.</param>
+    /// <param name="rotationY">Rotace kolem osy Y v radiánech.</param>
+    /// <param name="scale">Jednotné měřítko modelu.</param>
+    private static void ApplyModelTransform(Model model, Vector3 position, float rotationY, float scale)
+    {
+        model.SetPosition(position);
+        model.SetRotation(new Vector3(0.0f, rotationY, 0.0f));
+        model.SetScale(new Vector3(scale, scale, scale));
     }
 }

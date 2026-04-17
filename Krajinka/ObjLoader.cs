@@ -59,78 +59,67 @@ public static class ObjLoader
         List<Vector3> positions = new List<Vector3>();
         List<Vector3> normals = new List<Vector3>();
         List<Vector2> texCoords = new List<Vector2>();
-        Dictionary<string, List<VertexNormalTexCoord>> verticesByTexture = new Dictionary<string, List<VertexNormalTexCoord>>(StringComparer.Ordinal);
-        Dictionary<string, List<Triangle>> trianglesByTexture = new Dictionary<string, List<Triangle>>(StringComparer.Ordinal);
+        Dictionary<string, List<VertexNormalTexCoord>> verticesByTexture = new Dictionary<string, List<VertexNormalTexCoord>>();
+        Dictionary<string, List<Triangle>> trianglesByTexture = new Dictionary<string, List<Triangle>>();
 
-        string mtlFileName = string.Empty;
         string currentMaterial = string.Empty;
-        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>();
 
-        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        foreach (string rawLine in lines)
         {
-            string line = lines[lineIndex].Trim();
+            string line = rawLine.Trim();
 
-            if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+            if (line.Length == 0 || line.StartsWith("#"))
             {
                 continue;
             }
 
-            if (line.StartsWith("v ", StringComparison.Ordinal))
+            if (line.StartsWith("v "))
             {
                 ParseVertex(line, positions);
                 continue;
             }
 
-            if (line.StartsWith("vn ", StringComparison.Ordinal))
+            if (line.StartsWith("vn "))
             {
                 ParseNormal(line, normals);
                 continue;
             }
 
-            if (line.StartsWith("vt ", StringComparison.Ordinal))
+            if (line.StartsWith("vt "))
             {
                 ParseTexCoord(line, texCoords);
                 continue;
             }
 
-            if (line.StartsWith("f ", StringComparison.Ordinal))
+            if (line.StartsWith("f "))
             {
                 if (currentMaterial.Length == 0)
-                {
                     continue;
-                }
 
                 if (!materialTextureMap.TryGetValue(currentMaterial, out string? texturePath))
-                {
                     continue;
-                }
 
-                if (!verticesByTexture.TryGetValue(texturePath, out List<VertexNormalTexCoord>? partVertices))
+                if (!verticesByTexture.ContainsKey(texturePath))
                 {
-                    partVertices = new List<VertexNormalTexCoord>();
-                    verticesByTexture[texturePath] = partVertices;
+                    verticesByTexture[texturePath] = new List<VertexNormalTexCoord>();
+                    trianglesByTexture[texturePath] = new List<Triangle>();
                 }
 
-                if (!trianglesByTexture.TryGetValue(texturePath, out List<Triangle>? partTriangles))
-                {
-                    partTriangles = new List<Triangle>();
-                    trianglesByTexture[texturePath] = partTriangles;
-                }
-
-                ParseFace(line, positions, normals, texCoords, partVertices, partTriangles);
+                ParseFace(line, positions, normals, texCoords, verticesByTexture[texturePath], trianglesByTexture[texturePath]);
                 continue;
             }
 
-            if (line.StartsWith("mtllib ", StringComparison.Ordinal))
+            if (line.StartsWith("mtllib "))
             {
-                mtlFileName = line.Substring(7).Trim();
+                string mtlFileName = line.Substring(7).Trim();
                 string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
                 string mtlPath = Path.Combine(objDirectory, mtlFileName);
                 materialTextureMap = LoadMaterialTextureMap(mtlPath);
                 continue;
             }
 
-            if (line.StartsWith("usemtl ", StringComparison.Ordinal))
+            if (line.StartsWith("usemtl "))
             {
                 currentMaterial = line.Substring(7).Trim();
             }
@@ -140,15 +129,10 @@ public static class ObjLoader
 
         foreach (KeyValuePair<string, List<VertexNormalTexCoord>> part in verticesByTexture)
         {
-            if (!trianglesByTexture.TryGetValue(part.Key, out List<Triangle>? partTriangles))
-            {
-                continue;
-            }
+            List<Triangle> partTriangles = trianglesByTexture[part.Key];
 
             if (partTriangles.Count == 0)
-            {
                 continue;
-            }
 
             string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
             string texturePath = Path.GetFullPath(Path.Combine(objDirectory, part.Key));
@@ -167,9 +151,7 @@ public static class ObjLoader
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 4)
-        {
             return;
-        }
 
         float x = float.Parse(parts[1], CultureInfo.InvariantCulture);
         float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
@@ -187,9 +169,7 @@ public static class ObjLoader
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 3)
-        {
             return;
-        }
 
         float u = float.Parse(parts[1], CultureInfo.InvariantCulture);
         float v = float.Parse(parts[2], CultureInfo.InvariantCulture);
@@ -205,9 +185,7 @@ public static class ObjLoader
     {
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 4)
-        {
             return;
-        }
 
         float x = float.Parse(parts[1], CultureInfo.InvariantCulture);
         float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
@@ -236,15 +214,11 @@ public static class ObjLoader
         string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (parts.Length < 4)
-        {
             return;
-        }
 
         int i0 = CreateVertexIndex(parts[1], positions, normals, texCoords, vertices);
         if (i0 < 0)
-        {
             return;
-        }
 
         for (int i = 2; i + 1 < parts.Length; i++)
         {
@@ -252,9 +226,7 @@ public static class ObjLoader
             int i2 = CreateVertexIndex(parts[i + 1], positions, normals, texCoords, vertices);
 
             if (i1 < 0 || i2 < 0)
-            {
                 continue;
-            }
 
             triangles.Add(new Triangle(i0, i1, i2));
         }
@@ -272,51 +244,28 @@ public static class ObjLoader
     {
         ParseFaceVertex(token, out int rawPositionIndex, out int rawTexCoordIndex, out int rawNormalIndex);
 
-        int positionIndex = ConvertObjIndex(rawPositionIndex, positions.Count);
-        int texCoordIndex = ConvertObjIndex(rawTexCoordIndex, texCoords.Count);
-        int normalIndex = ConvertObjIndex(rawNormalIndex, normals.Count);
+        // OBJ indexy začínají od 1, záporné indexují od konce
+        int positionIndex = rawPositionIndex > 0 ? rawPositionIndex - 1 : -1;
+        int texCoordIndex = rawTexCoordIndex > 0 ? rawTexCoordIndex - 1 : -1;
+        int normalIndex = rawNormalIndex > 0 ? rawNormalIndex - 1 : -1;
 
         if (positionIndex < 0 || positionIndex >= positions.Count)
-        {
             return -1;
-        }
 
         Vector3 position = positions[positionIndex];
         Vector3 normal = Vector3.UnitY;
         Vector2 uv = Vector2.Zero;
 
         if (normalIndex >= 0 && normalIndex < normals.Count)
-        {
             normal = normals[normalIndex];
-        }
 
         if (texCoordIndex >= 0 && texCoordIndex < texCoords.Count)
-        {
             uv = texCoords[texCoordIndex];
-        }
 
         int newIndex = vertices.Count;
         vertices.Add(new VertexNormalTexCoord(position, normal, uv));
 
         return newIndex;
-    }
-
-    /// <summary>
-    /// Převede OBJ index na index do pole.
-    /// </summary>
-    private static int ConvertObjIndex(int objIndex, int count)
-    {
-        if (objIndex > 0)
-        {
-            return objIndex - 1;
-        }
-
-        if (objIndex < 0)
-        {
-            return count + objIndex;
-        }
-
-        return -1;
     }
 
     /// <summary>
@@ -335,19 +284,13 @@ public static class ObjLoader
         normalIndex = 0;
 
         if (values.Length > 0)
-        {
-            int.TryParse(values[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out vertexIndex);
-        }
+            int.TryParse(values[0], out vertexIndex);
 
         if (values.Length > 1)
-        {
-            int.TryParse(values[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out texCoordIndex);
-        }
+            int.TryParse(values[1], out texCoordIndex);
 
         if (values.Length > 2)
-        {
-            int.TryParse(values[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out normalIndex);
-        }
+            int.TryParse(values[2], out normalIndex);
     }
 
     /// <summary>
@@ -357,37 +300,30 @@ public static class ObjLoader
     /// <returns>Slovník mapování materiálu na texturu.</returns>
     private static Dictionary<string, string> LoadMaterialTextureMap(string mtlPath)
     {
-        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, string> materialTextureMap = new Dictionary<string, string>();
 
         if (!File.Exists(mtlPath))
-        {
             return materialTextureMap;
-        }
 
         string currentMaterial = string.Empty;
 
-        string[] mtlLines = File.ReadAllLines(mtlPath);
-        for (int lineIndex = 0; lineIndex < mtlLines.Length; lineIndex++)
+        foreach (string rawLine in File.ReadAllLines(mtlPath))
         {
-            string line = mtlLines[lineIndex].Trim();
-            if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
-            {
+            string line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith("#"))
                 continue;
-            }
 
-            if (line.StartsWith("newmtl ", StringComparison.Ordinal))
+            if (line.StartsWith("newmtl "))
             {
                 currentMaterial = line.Substring(7).Trim();
                 continue;
             }
 
-            if (line.StartsWith("map_Kd ", StringComparison.Ordinal) && currentMaterial.Length > 0)
+            if (line.StartsWith("map_Kd ") && currentMaterial.Length > 0)
             {
                 string textureFileName = line.Substring(7).Trim();
                 if (textureFileName.Length > 0)
-                {
                     materialTextureMap[currentMaterial] = textureFileName;
-                }
             }
         }
 

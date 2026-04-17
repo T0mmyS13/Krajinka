@@ -19,6 +19,11 @@ internal class Camera : SceneObject
     private const float UphillSlopeThreshold = 0.5f;
 
     /// <summary>
+    /// Násobek rychlosti při pohybu ve vodě.
+    /// </summary>
+    private const float WaterSpeedMultiplier = 0.6f;
+
+    /// <summary>
     /// Směr, kterým kamera míří.
     /// </summary>
     public Vector3 Front;
@@ -157,13 +162,24 @@ internal class Camera : SceneObject
         if (MoveDirection.LengthSquared > 0.0f)
         {
             Vector3 normalizedDirection = Vector3.Normalize(MoveDirection);
-            horizontalVelocity = normalizedDirection * MovementSpeed;
+            float currentHorizontalSpeed = MovementSpeed;
+
+            if (Terrain != null && IsGrounded)
+            {
+                SurfaceType currentSurfaceType = Terrain.GetSurfaceTypeAt(position.X, position.Z);
+                if (currentSurfaceType == SurfaceType.Water)
+                {
+                    currentHorizontalSpeed = currentHorizontalSpeed * WaterSpeedMultiplier;
+                }
+            }
+
+            horizontalVelocity = normalizedDirection * currentHorizontalSpeed;
 
             float targetX = position.X + (horizontalVelocity.X * dt);
             float targetZ = position.Z + (horizontalVelocity.Z * dt);
 
             bool canMoveHorizontally = true;
-            if (Terrain != null)
+            if (Terrain != null && IsGrounded)
             {
                 canMoveHorizontally = Terrain.CanMoveUphill(position.X, position.Z, targetX, targetZ, UphillSlopeThreshold);
             }

@@ -252,48 +252,68 @@ internal class Terrain : SceneObject
         waterVertices = BuildWaterVertices();
         waterTriangles = BuildWaterTriangles();
 
-        VAO = GL.GenVertexArray();
-        GL.BindVertexArray(VAO);
+        InitializeMeshBuffers(vertices, triangles, out int terrainVao, out int terrainVbo, out int terrainIbo);
+        VAO = terrainVao;
+        VBO = terrainVbo;
+        IBO = terrainIbo;
 
-        VBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, VBO);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * VertexNormalTexCoord.GetSizeInBytes(), vertices, BufferUsageHint.StaticDraw);
+        InitializeMeshBuffers(waterVertices, waterTriangles, out int waterVao, out int waterVbo, out int waterIbo);
+        waterVAO = waterVao;
+        waterVBO = waterVbo;
+        waterIBO = waterIbo;
+    }
 
-        IBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, IBO);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, triangles.Length * 3 * sizeof(int), triangles, BufferUsageHint.StaticDraw);
+    /// <summary>
+    /// Vytvoří a naplní VAO/VBO/IBO pro zadanou síť vrcholů a trojúhelníků.
+    /// </summary>
+    /// <param name="meshVertices">Vrcholová data.</param>
+    /// <param name="meshTriangles">Indexová data trojúhelníků.</param>
+    /// <param name="vao">Výstupní ID vertex array objektu.</param>
+    /// <param name="vbo">Výstupní ID vertex buffer objektu.</param>
+    /// <param name="ibo">Výstupní ID index buffer objektu.</param>
+    private static void InitializeMeshBuffers(
+        VertexNormalTexCoord[] meshVertices,
+        Triangle[] meshTriangles,
+        out int vao,
+        out int vbo,
+        out int ibo)
+    {
+        vao = GL.GenVertexArray();
+        GL.BindVertexArray(vao);
+
+        vbo = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, meshVertices.Length * VertexNormalTexCoord.GetSizeInBytes(), meshVertices, BufferUsageHint.StaticDraw);
+
+        ibo = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo);
+        GL.BufferData(BufferTarget.ElementArrayBuffer, meshTriangles.Length * 3 * sizeof(int), meshTriangles, BufferUsageHint.StaticDraw);
+
+        SetupVertexAttributes();
+        UnbindMeshBuffers();
+    }
+
+    /// <summary>
+    /// Nastaví formát vrcholových atributů pro strukturu VertexNormalTexCoord.
+    /// </summary>
+    private static void SetupVertexAttributes()
+    {
+        int stride = VertexNormalTexCoord.GetSizeInBytes();
 
         GL.EnableVertexAttribArray(0);
         GL.EnableVertexAttribArray(1);
         GL.EnableVertexAttribArray(2);
 
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), IntPtr.Zero);
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), (IntPtr)Vector3.SizeInBytes);
-        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), 2 * (IntPtr)Vector3.SizeInBytes);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, IntPtr.Zero);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (IntPtr)Vector3.SizeInBytes);
+        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, stride, 2 * (IntPtr)Vector3.SizeInBytes);
+    }
 
-        GL.BindVertexArray(0);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
-
-        waterVAO = GL.GenVertexArray();
-        GL.BindVertexArray(waterVAO);
-
-        waterVBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, waterVBO);
-        GL.BufferData(BufferTarget.ArrayBuffer, waterVertices.Length * VertexNormalTexCoord.GetSizeInBytes(), waterVertices, BufferUsageHint.StaticDraw);
-
-        waterIBO = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, waterIBO);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, waterTriangles.Length * 3 * sizeof(int), waterTriangles, BufferUsageHint.StaticDraw);
-
-        GL.EnableVertexAttribArray(0);
-        GL.EnableVertexAttribArray(1);
-        GL.EnableVertexAttribArray(2);
-
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), IntPtr.Zero);
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), (IntPtr)Vector3.SizeInBytes);
-        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, VertexNormalTexCoord.GetSizeInBytes(), 2 * (IntPtr)Vector3.SizeInBytes);
-
+    /// <summary>
+    /// Odpojí aktuální VAO a buffery.
+    /// </summary>
+    private static void UnbindMeshBuffers()
+    {
         GL.BindVertexArray(0);
         GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
@@ -463,7 +483,7 @@ internal class Terrain : SceneObject
     /// </summary>
     /// <param name="gridX">Souřadnice X v mřížce.</param>
     /// <param name="gridZ">Souřadnice Z v mřížce.</param>
-    /// <param name="searchRadius">Poloměr hledání ve vzorcích mřížky.</param>
+    /// <param name="searchRadius">Poloměr hledání ve vzorkách mřížky.</param>
     /// <returns>True pokud je v okolí voda, jinak false.</returns>
     private bool IsNearWater(int gridX, int gridZ, int searchRadius)
     {
@@ -730,18 +750,24 @@ internal class Terrain : SceneObject
             return true;
         }
 
-        float clampedToX = MathHelper.Clamp(toX, MinX, MaxX);
-        float clampedToZ = MathHelper.Clamp(toZ, MinZ, MaxZ);
-
-        int gridX = (int)MathF.Round(clampedToX / SampleSpacing);
-        int gridZ = (int)MathF.Round(clampedToZ / SampleSpacing);
-
-        gridX = Math.Clamp(gridX, 0, width - 1);
-        gridZ = Math.Clamp(gridZ, 0, depth - 1);
+        ConvertWorldToGridIndex(toX, toZ, out int gridX, out int gridZ);
 
         float slopeAtTarget = CalculateSlopeAtGrid(gridX, gridZ);
 
         return slopeAtTarget <= uphillSlopeThreshold;
+    }
+
+    /// <summary>
+    /// Vrátí typ povrchu v dané světové souřadnici.
+    /// </summary>
+    /// <param name="x">Souřadnice X ve světě.</param>
+    /// <param name="z">Souřadnice Z ve světě.</param>
+    /// <returns>Typ povrchu terénu.</returns>
+    public SurfaceType GetSurfaceTypeAt(float x, float z)
+    {
+        ConvertWorldToGridIndex(x, z, out int gridX, out int gridZ);
+
+        return SurfaceTypes[gridX, gridZ];
     }
 
     /// <summary>
@@ -757,7 +783,7 @@ internal class Terrain : SceneObject
 
         float gridX = clampedX / SampleSpacing;
         float gridZ = clampedZ / SampleSpacing;
-
+        
         int x0 = (int)MathF.Floor(gridX);
         int z0 = (int)MathF.Floor(gridZ);
         int x1 = Math.Min(x0 + 1, width - 1);
@@ -868,5 +894,24 @@ internal class Terrain : SceneObject
         BindSurfaceTexture(SurfaceType.Mud, 3);
         GL.ActiveTexture(TextureUnit.Texture4);
         GL.BindTexture(TextureTarget.Texture2D, surfaceTypeMapTextureId);
+    }
+
+    /// <summary>
+    /// Převede světové souřadnice na indexy mřížky terénu.
+    /// </summary>
+    /// <param name="x">Souřadnice X ve světě.</param>
+    /// <param name="z">Souřadnice Z ve světě.</param>
+    /// <param name="gridX">Výstupní souřadnice X v mřížce.</param>
+    /// <param name="gridZ">Výstupní souřadnice Z v mřížce.</param>
+    private void ConvertWorldToGridIndex(float x, float z, out int gridX, out int gridZ)
+    {
+        float clampedX = MathHelper.Clamp(x, MinX, MaxX);
+        float clampedZ = MathHelper.Clamp(z, MinZ, MaxZ);
+
+        gridX = (int)MathF.Round(clampedX / SampleSpacing);
+        gridZ = (int)MathF.Round(clampedZ / SampleSpacing);
+
+        gridX = Math.Clamp(gridX, 0, width - 1);
+        gridZ = Math.Clamp(gridZ, 0, depth - 1);
     }
 }
