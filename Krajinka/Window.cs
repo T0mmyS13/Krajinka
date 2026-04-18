@@ -224,6 +224,26 @@ public class Window : GameWindow
     private Model[] flowers = null!;
 
     /// <summary>
+    /// Sdílený model slunce načtený jednou.
+    /// </summary>
+    private Model sunModel = null!;
+
+    /// <summary>
+    /// Měřítko modelu slunce.
+    /// </summary>
+    private const float SunScale = 0.2f;
+
+    /// <summary>
+    /// Pozice slunce na ose mezi kamerou a světlem (0 = kamera, 1 = světlo).
+    /// </summary>
+    private const float SunAxisFactor = 0.5f;
+
+    /// <summary>
+    /// Barva modelu slunce při vykreslení bez textury.
+    /// </summary>
+    private static readonly Vector3 SunColor = new Vector3(1.0f, 0.92f, 0.25f);
+
+    /// <summary>
     /// Vytvoří hlavní okno aplikace.
     /// </summary>
     /// <param name="gameWindowSettings">Nastavení herní smyčky.</param>
@@ -276,6 +296,8 @@ public class Window : GameWindow
         tulipModel = new Model(Path.Combine("Data", "models", "tulip", "Roses Orange.obj"));
 
         flowers = new Model[] { roseModel, tulipModel };
+
+        sunModel = new Model(Path.Combine("Data", "models","Sun.obj"), false);
 
 
 
@@ -457,10 +479,28 @@ public class Window : GameWindow
         shader.SetUniform("texGrass", 1);
         shader.SetUniform("texRock", 2);
         shader.SetUniform("texMud", 3);
+        shader.SetUniform("texModel", 1);
         shader.SetUniform("surfaceTypeMap", 4);
+        shader.SetUniform("solidColor", Vector3.One);
 
-        shader.SetUniform("useTexture", 1);
+        shader.SetUniform("isTerrain", 2);
+
+        Vector3 cameraPosition = cameraState.GetPosition();
+        Vector4 lightPositionWorld = lightSun.GetPositionWorld();
+        Vector3 lightPosition = new Vector3(lightPositionWorld.X, lightPositionWorld.Y, lightPositionWorld.Z);
+        Vector3 sunPosition = cameraPosition + ((lightPosition - cameraPosition) * SunAxisFactor);
+
+        sunModel.SetPosition(sunPosition);
+        sunModel.SetRotation(Vector3.Zero);
+        sunModel.SetScale(new Vector3(SunScale, SunScale, SunScale));
+
         shader.SetUniform("isTerrain", 0);
+        shader.SetUniform("solidColor", SunColor);
+        shader.SetUniform("model", sunModel.GetModelMatrix());
+        sunModel.Draw();
+
+        shader.SetUniform("isTerrain", 2);
+        shader.SetUniform("solidColor", Vector3.One);
 
         foreach (ObjectInstance model in objectInstances)
         {
@@ -487,8 +527,6 @@ public class Window : GameWindow
             {
                 terrainObject.BindSurfaceTextures();
                 terrainObject.BindSurfaceTexture(SurfaceType.Mud, 0);
-
-                shader.SetUniform("useTexture", 1);
 
                 shader.SetUniform("isTerrain", 1);
                 shader.SetUniform("terrainMaxXZ", new Vector2(terrainObject.MaxX, terrainObject.MaxZ));
@@ -518,12 +556,12 @@ public class Window : GameWindow
                 GL.DepthMask(true);
                 GL.Disable(EnableCap.Blend);
                 shader.Use();
+                shader.SetUniform("isTerrain", 2);
                 continue;
             }
             else
             {
-                shader.SetUniform("useTexture", 1);
-                shader.SetUniform("isTerrain", 0);
+                shader.SetUniform("isTerrain", 2);
             }
 
             shader.SetUniform("model", sceneObject.GetModelMatrix());
@@ -713,6 +751,7 @@ public class Window : GameWindow
         treeModel.Dispose();
         rockModel.Dispose();
         bushModel.Dispose();
+        sunModel.Dispose();
         
         foreach (Model flower in flowers)
         {

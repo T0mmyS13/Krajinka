@@ -59,8 +59,8 @@ public static class ObjLoader
         List<Vector3> positions = new List<Vector3>();
         List<Vector3> normals = new List<Vector3>();
         List<Vector2> texCoords = new List<Vector2>();
-        Dictionary<string, List<VertexNormalTexCoord>> verticesByTexture = new Dictionary<string, List<VertexNormalTexCoord>>();
-        Dictionary<string, List<Triangle>> trianglesByTexture = new Dictionary<string, List<Triangle>>();
+        Dictionary<string, List<VertexNormalTexCoord>> verticesByMaterial = new Dictionary<string, List<VertexNormalTexCoord>>();
+        Dictionary<string, List<Triangle>> trianglesByMaterial = new Dictionary<string, List<Triangle>>();
 
         string currentMaterial = string.Empty;
         Dictionary<string, string> materialTextureMap = new Dictionary<string, string>();
@@ -95,18 +95,17 @@ public static class ObjLoader
             if (line.StartsWith("f "))
             {
                 if (currentMaterial.Length == 0)
-                    continue;
-
-                if (!materialTextureMap.TryGetValue(currentMaterial, out string? texturePath))
-                    continue;
-
-                if (!verticesByTexture.ContainsKey(texturePath))
                 {
-                    verticesByTexture[texturePath] = new List<VertexNormalTexCoord>();
-                    trianglesByTexture[texturePath] = new List<Triangle>();
+                    continue;
                 }
 
-                ParseFace(line, positions, normals, texCoords, verticesByTexture[texturePath], trianglesByTexture[texturePath]);
+                if (!verticesByMaterial.ContainsKey(currentMaterial))
+                {
+                    verticesByMaterial[currentMaterial] = new List<VertexNormalTexCoord>();
+                    trianglesByMaterial[currentMaterial] = new List<Triangle>();
+                }
+
+                ParseFace(line, positions, normals, texCoords, verticesByMaterial[currentMaterial], trianglesByMaterial[currentMaterial]);
                 continue;
             }
 
@@ -127,15 +126,22 @@ public static class ObjLoader
 
         List<ObjMeshData> parts = new List<ObjMeshData>();
 
-        foreach (KeyValuePair<string, List<VertexNormalTexCoord>> part in verticesByTexture)
+        foreach (KeyValuePair<string, List<VertexNormalTexCoord>> part in verticesByMaterial)
         {
-            List<Triangle> partTriangles = trianglesByTexture[part.Key];
+            List<Triangle> partTriangles = trianglesByMaterial[part.Key];
 
             if (partTriangles.Count == 0)
+            {
                 continue;
+            }
 
-            string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
-            string texturePath = Path.GetFullPath(Path.Combine(objDirectory, part.Key));
+            string texturePath = string.Empty;
+            if (materialTextureMap.TryGetValue(part.Key, out string? textureFileName) && !string.IsNullOrWhiteSpace(textureFileName))
+            {
+                string objDirectory = Path.GetDirectoryName(filename) ?? string.Empty;
+                texturePath = Path.GetFullPath(Path.Combine(objDirectory, textureFileName));
+            }
+
             parts.Add(new ObjMeshData(part.Value.ToArray(), partTriangles.ToArray(), texturePath));
         }
 

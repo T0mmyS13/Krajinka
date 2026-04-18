@@ -25,7 +25,7 @@ internal class Model : SceneObject
         public int VBO;
         public int IBO;
         public int IndexCount;
-        public Texture Texture;
+        public Texture? Texture;
     }
 
     /// <summary>
@@ -37,22 +37,33 @@ internal class Model : SceneObject
     /// Vytvoří objekt z OBJ souboru.
     /// </summary>
     /// <param name="objRelativePath">Relativní cesta k OBJ souboru.</param>
-    public Model(string objRelativePath)
+    /// <param name="hastexture">Povolí načtení částí modelu s map_Kd texturou.</param>
+    public Model(string objRelativePath, bool hastexture = true)
     {
         string fullPath = Path.Combine(AppContext.BaseDirectory, objRelativePath);
         ObjMeshData[] meshParts = ObjLoader.Load(fullPath);
 
-        if (meshParts.Length == 0)
-        {
-            throw new InvalidOperationException("Model neobsahuje žádnou vykreslitelnou část s map_Kd texturou.");
-        }
-
         for (int i = 0; i < meshParts.Length; i++)
         {
             ObjMeshData meshPart = meshParts[i];
-            Texture texture = new Texture(meshPart.TexturePath, TextureSetting.Default);
+            Texture? texture = null;
+
+            if (!string.IsNullOrWhiteSpace(meshPart.TexturePath))
+            {
+                texture = new Texture(meshPart.TexturePath, TextureSetting.Default);
+            }
+            else if (hastexture)
+            {
+                continue;
+            }
+
             ModelPart part = CreateModelPart(meshPart.Vertices, meshPart.Triangles, texture);
             parts.Add(part);
+        }
+
+        if (parts.Count == 0)
+        {
+            throw new InvalidOperationException("Model neobsahuje žádnou vykreslitelnou část s map_Kd texturou.");
         }
     }
 
@@ -61,7 +72,7 @@ internal class Model : SceneObject
     /// </summary>
     /// <param name="vertices">Vrcholová data.</param>
     /// <param name="triangles">Indexová data trojúhelníků.</param>
-    private ModelPart CreateModelPart(VertexNormalTexCoord[] vertices, Triangle[] triangles, Texture texture)
+    private ModelPart CreateModelPart(VertexNormalTexCoord[] vertices, Triangle[] triangles, Texture? texture)
     {
         ModelPart part = new ModelPart();
         part.Texture = texture;
@@ -101,7 +112,11 @@ internal class Model : SceneObject
         for (int i = 0; i < parts.Count; i++)
         {
             ModelPart part = parts[i];
-            part.Texture.Bind(1);
+            if (part.Texture != null)
+            {
+                part.Texture.Bind(1);
+            }
+
             GL.BindVertexArray(part.VAO);
             GL.DrawElements(PrimitiveType.Triangles, part.IndexCount, DrawElementsType.UnsignedInt, IntPtr.Zero);
         }
@@ -125,7 +140,10 @@ internal class Model : SceneObject
             GL.DeleteBuffer(part.VBO);
             GL.DeleteBuffer(part.IBO);
             GL.DeleteVertexArray(part.VAO);
-            part.Texture.Dispose();
+            if (part.Texture != null)
+            {
+                part.Texture.Dispose();
+            }
         }
 
         parts.Clear();
