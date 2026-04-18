@@ -164,10 +164,24 @@ internal class Terrain : SceneObject
     private readonly Dictionary<SurfaceType, Texture> surfaceTextures;
 
     /// <summary>
+    /// Textury pro animovanou hladinu vody.
+    /// </summary>
+    private readonly Texture[] waterTextures;
+
+    /// <summary>
     /// ID textury mapy typů povrchů generované z logiky terénu.
     /// </summary>
     private readonly int surfaceTypeMapTextureId;
 
+    /// <summary>
+    /// Doba zobrazení jednoho snímku vody v sekundách.
+    /// </summary>
+    private const double WaterFrameDuration = 0.08;
+
+    /// <summary>
+    /// Počet snímků animace vody.
+    /// </summary>
+    private const int WaterFrameCount = 40;
 
     /// <summary>
     /// Výšky terénu v mřížce [x, z].
@@ -245,6 +259,7 @@ internal class Terrain : SceneObject
 
         SurfaceTypes = DetermineSurfaceTypes();
         LoadSurfaceTextures();
+        waterTextures = LoadWaterTextures();
         surfaceTypeMapTextureId = CreateSurfaceTypeMapTexture();
 
         vertices = BuildMeshVertices();
@@ -326,12 +341,35 @@ internal class Terrain : SceneObject
     {
         foreach (SurfaceType surfaceType in Enum.GetValues<SurfaceType>())
         {
+            if (surfaceType == SurfaceType.Water)
+            {
+                continue;
+            }
+
             string fileName = surfaceType.ToString().ToLowerInvariant() + ".png";
             string relativePath = Path.Combine("Data", "textures", fileName);
             Texture texture = new Texture(relativePath, TextureSetting.Default);
 
             surfaceTextures[surfaceType] = texture;
         }
+    }
+
+    /// <summary>
+    /// Načte textury pro animovanou hladinu vody.
+    /// </summary>
+    /// <returns>Pole textur pro jednotlivé snímky vody.</returns>
+    private static Texture[] LoadWaterTextures()
+    {
+        Texture[] result = new Texture[WaterFrameCount];
+
+        for (int frameIndex = 0; frameIndex < WaterFrameCount; frameIndex++)
+        {
+            string fileName = frameIndex.ToString("0000") + ".png";
+            string relativePath = Path.Combine("Data", "textures", "water", fileName);
+            result[frameIndex] = new Texture(relativePath, TextureSetting.Default);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -447,7 +485,7 @@ internal class Terrain : SceneObject
                 float height = Heights[x, z];
                 byte alphaValue = AlphaValues[x, z];
 
-                if (alphaValue == 0 || height < WaterHeightThreshold)
+                if (alphaValue == 128 || height < WaterHeightThreshold)
                 {
                     result[x, z] = SurfaceType.Water;
                 }
@@ -595,7 +633,9 @@ internal class Terrain : SceneObject
     }
 
     /// <summary>
-    /// Vytvoří vrcholová data rovné hladiny vody.
+    /// Vytvoří vrcholová data hladiny vody.
+    /// U oblastí označených alpha = 0, které jsou výše než práh jezera,
+    /// voda kopíruje terén (např. řeka ve vyšší nadmořské výšce).
     /// </summary>
     /// <returns>Pole vrcholů hladiny vody.</returns>
     private VertexNormalTexCoord[] BuildWaterVertices()
@@ -610,9 +650,17 @@ internal class Terrain : SceneObject
                 float worldZ = z * SampleSpacing;
                 Vector2 uv = new Vector2(worldX * 0.08f, worldZ * 0.08f);
 
+                float terrainHeight = Heights[x, z];
+                float waterSurfaceLevel = WaterSurfaceLevel;
+
+                if (AlphaValues[x, z] == 128 && terrainHeight >= WaterHeightThreshold)
+                {
+                    waterSurfaceLevel = terrainHeight + 0.02f;
+                }
+
                 int index = ToVertexIndex(x, z);
                 result[index] = new VertexNormalTexCoord(
-                    new Vector3(worldX, WaterSurfaceLevel, worldZ),
+                    new Vector3(worldX, waterSurfaceLevel, worldZ),
                     Vector3.UnitY,
                     uv);
             }
@@ -838,6 +886,11 @@ internal class Terrain : SceneObject
             return;
         }
 
+        foreach (Texture texture in waterTextures)
+        {
+            texture.Dispose();
+        }
+
         foreach (Texture texture in surfaceTextures.Values)
         {
             texture.Dispose();
@@ -888,12 +941,22 @@ internal class Terrain : SceneObject
     /// <returns>True pokud byly textury připojeny.</returns>
     public void BindSurfaceTextures()
     {
-        BindSurfaceTexture(SurfaceType.Water, 0);
         BindSurfaceTexture(SurfaceType.Grass, 1);
         BindSurfaceTexture(SurfaceType.Rock, 2);
         BindSurfaceTexture(SurfaceType.Mud, 3);
         GL.ActiveTexture(TextureUnit.Texture4);
         GL.BindTexture(TextureTarget.Texture2D, surfaceTypeMapTextureId);
+    }
+
+    /// <summary>
+    /// Připojí snímek animované vody na zadanou texturovou jednotku.
+    /// </summary>
+    /// <param name="unit">Texturová jednotka.</param>
+    /// <param name="elapsedTime">Uplynulý čas animace v sekundách.</param>
+    public void BindWaterTexture(int unit, double elapsedTime)
+    {
+        int frameIndex = (int)(elapsedTime / WaterFrameDuration) % waterTextures.Length;
+        waterTextures[frameIndex].Bind(unit);
     }
 
     /// <summary>

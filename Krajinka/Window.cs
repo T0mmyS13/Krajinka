@@ -99,6 +99,11 @@ public class Window : GameWindow
     private double frameTimeSum;
 
     /// <summary>
+    /// Uplynulý čas pro animaci vody.
+    /// </summary>
+    private double waterAnimationTime;
+
+    /// <summary>
     /// Poslední známá pozice myši.
     /// </summary>
     private Vector2 lastMousePos;
@@ -428,7 +433,8 @@ public class Window : GameWindow
     /// </summary>
     /// <param name="viewportState">Aktuální viewport.</param>
     /// <param name="cameraState">Aktuální stav kamery.</param>
-    private void DrawScene(Viewport viewportState, Camera cameraState)
+    /// <param name="currentTime">Uplynulý čas pro animaci vody.</param>
+    private void DrawScene(Viewport viewportState, Camera cameraState, double currentTime)
     {
         (Vector2i position, Vector2i size) = viewportState.GetPixelViewport();
 
@@ -506,7 +512,7 @@ public class Window : GameWindow
                 waterShader.SetUniform("surfaceTypeMap", 4);
                 waterShader.SetUniform("terrainMaxXZ", new Vector2(terrainObject.MaxX, terrainObject.MaxZ));
 
-                terrainObject.BindSurfaceTexture(SurfaceType.Water, 0);
+                terrainObject.BindWaterTexture(0, currentTime);
                 terrainObject.DrawWaterSurface();
 
                 GL.DepthMask(true);
@@ -533,8 +539,10 @@ public class Window : GameWindow
     {
         base.OnRenderFrame(e);
 
+        waterAnimationTime += e.Time;
+
         GL.ClearColor(0.529f, 0.808f, 0.922f, 1.0f);
-        DrawScene(viewport, camera);
+        DrawScene(viewport, camera, waterAnimationTime);
         SwapBuffers();
 
         frameTimes.Enqueue(e.Time);
@@ -753,7 +761,7 @@ public class Window : GameWindow
 
         if (objectCode == BushObjectCode)
         {
-            return GetRandomScale(0.0005f, 0.0007f);
+            return GetRandomScale(0.015f, 0.027f);
         }
 
         if (objectCode == RockObjectCode)
