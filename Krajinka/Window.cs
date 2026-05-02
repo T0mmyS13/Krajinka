@@ -69,6 +69,16 @@ public class Window : GameWindow
     private Shader waterShader = null!;
 
     /// <summary>
+    /// Shader použitý pro vykreslení procedurální oblohy.
+    /// </summary>
+    private Shader skyShader = null!;
+
+    /// <summary>
+    /// VAO pro fullscreen trojúhelník oblohy.
+    /// </summary>
+    private int skyVao;
+
+    /// <summary>
     /// Informace o aktivním viewportu.
     /// </summary>
     private Viewport viewport = null!;
@@ -224,24 +234,49 @@ public class Window : GameWindow
     private Model[] flowers = null!;
 
     /// <summary>
-    /// Sdílený model slunce načtený jednou.
+    /// Směr slunce ve světových souřadnicích.
     /// </summary>
-    private Model sunModel = null!;
+    private Vector3 sunDirectionWorld = Vector3.UnitY;
 
     /// <summary>
-    /// Měřítko modelu slunce.
+    /// Časová proměnná pro cyklus dne a noci.
     /// </summary>
-    private const float SunScale = 0.2f;
+    private float dayTime;
 
     /// <summary>
-    /// Pozice slunce na ose mezi kamerou a světlem (0 = kamera, 1 = světlo).
+    /// Rychlost cyklu dne a noci.
     /// </summary>
-    private const float SunAxisFactor = 0.5f;
+    private const float DayNightSpeed = 0.008f;
 
     /// <summary>
-    /// Barva modelu slunce při vykreslení bez textury.
+    /// Denní barva světla.
     /// </summary>
-    private static readonly Vector3 SunColor = new Vector3(1.0f, 0.92f, 0.25f);
+    private static readonly Vector3 DayLightColor = new Vector3(1.0f, 1.0f, 0.95f);
+
+    /// <summary>
+    /// Barva světla při západu.
+    /// </summary>
+    private static readonly Vector3 SunsetLightColor = new Vector3(1.0f, 0.60f, 0.32f);
+
+    /// <summary>
+    /// Noční barva světla.
+    /// </summary>
+    private static readonly Vector3 NightLightColor = new Vector3(0.50f, 0.58f, 0.75f);
+
+    /// <summary>
+    /// Denní intenzita světla.
+    /// </summary>
+    private const float DayLightIntensity = 1.0f;
+
+    /// <summary>
+    /// Noční intenzita světla.
+    /// </summary>
+    private const float NightLightIntensity = 0.28f;
+
+    /// <summary>
+    /// Výška slunce, od které začíná západní zbarvení.
+    /// </summary>
+    private const float SunsetStartY = 0.28f;
 
     /// <summary>
     /// Vytvoří hlavní okno aplikace.
@@ -267,6 +302,8 @@ public class Window : GameWindow
 
         shader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "basic.frag"));
         waterShader = new Shader(Path.Combine("Shaders", "basic.vert"), Path.Combine("Shaders", "water.frag"));
+        skyShader = new Shader(Path.Combine("Shaders", "sky.vert"), Path.Combine("Shaders", "sky.frag"));
+        skyVao = GL.GenVertexArray();
 
         collisionSystem = new CollisionSystem(
             TreeObjectCode,
@@ -297,10 +334,6 @@ public class Window : GameWindow
 
         flowers = new Model[] { roseModel, tulipModel };
 
-        sunModel = new Model(Path.Combine("Data", "models","Sun.obj"), false);
-
-
-
         CreateObjects();
         CreateFlowers();
 
@@ -316,7 +349,8 @@ public class Window : GameWindow
         camera.MaxZ = terrain.MaxZ;
         camera.Terrain = terrain;
 
-        lightSun = Light.CreatePoint(new Vector3(200.0f, 350.0f, 150.0f), Vector3.One, 1.0f);
+        lightSun = Light.CreatePoint(new Vector3(0.0f, 1.0f, 0.0f), DayLightColor, DayLightIntensity);
+        UpdateSunLight(0.0f);
 
         CursorState = CursorState.Grabbed;
     }
@@ -465,6 +499,10 @@ public class Window : GameWindow
 
         GL.Viewport(position.X, position.Y, size.X, size.Y);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        DrawSky(viewportState, cameraState);
+
+        GL.Clear(ClearBufferMask.DepthBufferBit);
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
         GL.CullFace(TriangleFace.Back);
@@ -473,7 +511,7 @@ public class Window : GameWindow
         shader.Use();
         shader.SetUniform("projection", cameraState.GetProjectionMatrix(viewportState.GetAspectRatio()));
         shader.SetUniform("view", cameraState.GetViewMatrix());
-        shader.SetUniform("lightPosWorld", lightSun.GetPositionWorld());
+        shader.SetUniform("sunDirectionWorld", sunDirectionWorld);
         shader.SetUniform("lightColor", lightSun.Color);
         shader.SetUniform("lightIntensity", lightSun.Intensity);
         shader.SetUniform("texGrass", 1);
@@ -484,23 +522,6 @@ public class Window : GameWindow
         shader.SetUniform("solidColor", Vector3.One);
 
         shader.SetUniform("isTerrain", 2);
-
-        Vector3 cameraPosition = cameraState.GetPosition();
-        Vector4 lightPositionWorld = lightSun.GetPositionWorld();
-        Vector3 lightPosition = new Vector3(lightPositionWorld.X, lightPositionWorld.Y, lightPositionWorld.Z);
-        Vector3 sunPosition = cameraPosition + ((lightPosition - cameraPosition) * SunAxisFactor);
-
-        sunModel.SetPosition(sunPosition);
-        sunModel.SetRotation(Vector3.Zero);
-        sunModel.SetScale(new Vector3(SunScale, SunScale, SunScale));
-
-        shader.SetUniform("isTerrain", 0);
-        shader.SetUniform("solidColor", SunColor);
-        shader.SetUniform("model", sunModel.GetModelMatrix());
-        sunModel.Draw();
-
-        shader.SetUniform("isTerrain", 2);
-        shader.SetUniform("solidColor", Vector3.One);
 
         foreach (ObjectInstance model in objectInstances)
         {
@@ -543,7 +564,7 @@ public class Window : GameWindow
                 waterShader.SetUniform("view", cameraState.GetViewMatrix());
                 waterShader.SetUniform("model", sceneObject.GetModelMatrix());
                 waterShader.SetUniform("cameraPosWorld", cameraState.GetPosition());
-                waterShader.SetUniform("lightPosWorld", lightSun.GetPositionWorld());
+                waterShader.SetUniform("sunDirectionWorld", sunDirectionWorld);
                 waterShader.SetUniform("lightColor", lightSun.Color);
                 waterShader.SetUniform("lightIntensity", lightSun.Intensity);
                 waterShader.SetUniform("texWater", 0);
@@ -567,6 +588,34 @@ public class Window : GameWindow
             shader.SetUniform("model", sceneObject.GetModelMatrix());
             sceneObject.Draw();
         }
+    }
+
+    /// <summary>
+    /// Vykreslí procedurální oblohu a slunce na pozadí.
+    /// </summary>
+    /// <param name="viewportState">Aktuální viewport.</param>
+    /// <param name="cameraState">Aktuální stav kamery.</param>
+    private void DrawSky(Viewport viewportState, Camera cameraState)
+    {
+        skyShader.Use();
+
+        Matrix4 projection = cameraState.GetProjectionMatrix(viewportState.GetAspectRatio());
+        Matrix4 view = cameraState.GetViewMatrix();
+
+        Matrix4 invProjection = projection.Inverted();
+        Matrix4 invView = view.Inverted();
+
+        skyShader.SetUniform("invProjection", invProjection);
+        skyShader.SetUniform("invView", invView);
+        skyShader.SetUniform("sunDirectionWorld", sunDirectionWorld);
+        skyShader.SetUniform("lightIntensity", lightSun.Intensity);
+
+        GL.Disable(EnableCap.CullFace);
+        GL.Disable(EnableCap.DepthTest);
+
+        GL.BindVertexArray(skyVao);
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        GL.BindVertexArray(0);
     }
 
     /// <summary>
@@ -611,6 +660,8 @@ public class Window : GameWindow
         {
             return;
         }
+
+        UpdateSunLight((float)e.Time);
 
         KeyboardState keyboard = KeyboardState;
 
@@ -748,10 +799,11 @@ public class Window : GameWindow
 
         shader.Dispose();
         waterShader.Dispose();
+        skyShader.Dispose();
+        GL.DeleteVertexArray(skyVao);
         treeModel.Dispose();
         rockModel.Dispose();
         bushModel.Dispose();
-        sunModel.Dispose();
         
         foreach (Model flower in flowers)
         {
@@ -858,5 +910,53 @@ public class Window : GameWindow
         model.SetPosition(position);
         model.SetRotation(new Vector3(0.0f, rotationY, 0.0f));
         model.SetScale(new Vector3(scale, scale, scale));
+    }
+
+    /// <summary>
+    /// Aktualizuje vektor slunce a parametry směrového světla podle času.
+    /// </summary>
+    /// <param name="dt">Doba od posledního snímku v sekundách.</param>
+    private void UpdateSunLight(float dt)
+    {
+        dayTime += dt * DayNightSpeed;
+
+        float x = MathF.Cos(dayTime);
+        float y = MathF.Sin(dayTime);
+        float z = 0.18f;
+
+        sunDirectionWorld = Vector3.Normalize(new Vector3(x, y, z));
+        lightSun.SetPosition(sunDirectionWorld * 250.0f);
+
+        if (sunDirectionWorld.Y <= 0.0f)
+        {
+            lightSun.Color = NightLightColor;
+            lightSun.Intensity = NightLightIntensity;
+        }
+        else if (sunDirectionWorld.Y >= SunsetStartY)
+        {
+            lightSun.Color = DayLightColor;
+            lightSun.Intensity = DayLightIntensity;
+        }
+        else
+        {
+            float t = (SunsetStartY - sunDirectionWorld.Y) / SunsetStartY;
+            lightSun.Color = LerpColor(DayLightColor, SunsetLightColor, t);
+            lightSun.Intensity = DayLightIntensity - (t * 0.45f);
+        }
+    }
+
+    /// <summary>
+    /// Vrátí lineárně interpolovanou barvu mezi dvěma barvami.
+    /// </summary>
+    /// <param name="from">Počáteční barva.</param>
+    /// <param name="to">Cílová barva.</param>
+    /// <param name="t">Hodnota 0 až 1.</param>
+    /// <returns>Interpolovaná barva.</returns>
+    private static Vector3 LerpColor(Vector3 from, Vector3 to, float t)
+    {
+        float x = from.X + ((to.X - from.X) * t);
+        float y = from.Y + ((to.Y - from.Y) * t);
+        float z = from.Z + ((to.Z - from.Z) * t);
+        return new Vector3(x, y, z);
     }
 }

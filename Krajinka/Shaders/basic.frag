@@ -4,7 +4,7 @@ in vec3 fragmentWorld;
 in vec2 vUV;
 out vec4 outColor;
 
-uniform vec4 lightPosWorld;
+uniform vec3 sunDirectionWorld;
 uniform vec3 lightColor;
 uniform float lightIntensity;
 uniform sampler2D texGrass;
@@ -24,7 +24,7 @@ float Transition(float value, float center, float halfWidth)
 void main()
 {
     vec3 normal = normalize(vNormal);
-    vec3 lightDir = normalize(lightPosWorld.xyz - fragmentWorld);
+    vec3 lightDir = normalize(sunDirectionWorld);
 
     float NdotL = max(0.0, dot(normal, lightDir));
 
